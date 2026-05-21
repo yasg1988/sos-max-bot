@@ -10,6 +10,7 @@ import secrets
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -47,6 +48,9 @@ FAMILY_CODE_TTL_MINUTES = int(os.getenv("FAMILY_CODE_TTL_MINUTES", "15"))
 ORG_ALERT_COOLDOWN_MINUTES = int(os.getenv("ORG_ALERT_COOLDOWN_MINUTES", "10"))
 TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 BOT_USER_ID: int | None = None
+BASE_DIR = Path(__file__).resolve().parent
+CHILD_RECOMMENDATIONS_IMAGE = BASE_DIR / "assets" / "child_recommendations.png"
+CHILD_RECOMMENDATIONS_IMAGE_PAYLOAD: dict[str, Any] | None = None
 
 NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЁё0-9 .,'\"()\\-]{2,120}$")
 INN_RE = re.compile(r"^\d{10}(\d{2})?$")
@@ -110,6 +114,35 @@ async def max_request(method: str, path: str, **kwargs: Any) -> httpx.Response:
     logger.info("MAX response method=%s path=%s status=%s body=%s", method, path, response.status_code, response.text[:2000])
     response.raise_for_status()
     return response
+
+
+async def upload_image(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        logger.warning("Image asset not found: %s", path)
+        return None
+    upload_response = await max_request("POST", "/uploads", params={"type": "image"})
+    upload_url = (upload_response.json() or {}).get("url")
+    if not upload_url:
+        logger.warning("MAX upload URL is empty for image=%s response=%s", path, upload_response.text[:1000])
+        return None
+    data = path.read_bytes()
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        response = await client.post(upload_url, files={"data": (path.name, data, "image/png")})
+    logger.info("MAX image upload status=%s body=%s", response.status_code, response.text[:1000])
+    response.raise_for_status()
+    payload = response.json() or {}
+    if not payload.get("token"):
+        logger.warning("MAX image upload response has no token: %s", safe_json_dump(payload))
+    return payload
+
+
+async def child_recommendations_image_attachment() -> dict[str, Any] | None:
+    global CHILD_RECOMMENDATIONS_IMAGE_PAYLOAD
+    if CHILD_RECOMMENDATIONS_IMAGE_PAYLOAD is None:
+        CHILD_RECOMMENDATIONS_IMAGE_PAYLOAD = await upload_image(CHILD_RECOMMENDATIONS_IMAGE)
+    if not CHILD_RECOMMENDATIONS_IMAGE_PAYLOAD:
+        return None
+    return {"type": "image", "payload": CHILD_RECOMMENDATIONS_IMAGE_PAYLOAD}
 
 
 def callback_button(text: str, payload: str) -> dict[str, Any]:
@@ -177,6 +210,25 @@ async def send_message_rows(chat_id: int | str, text: str, rows: list[list[dict[
                 "payload": {"buttons": rows},
             }
         ]
+    await max_request("POST", "/messages", params={"chat_id": chat_id}, json=body)
+
+
+async def send_message_with_attachments(
+    chat_id: int | str,
+    text: str,
+    attachments: list[dict[str, Any]],
+    buttons: list[dict[str, Any]] | None = None,
+    columns: int = 1,
+) -> None:
+    body: dict[str, Any] = {"text": trim_text(text)}
+    body["attachments"] = list(attachments)
+    if buttons:
+        body["attachments"].append(
+            {
+                "type": "inline_keyboard",
+                "payload": {"buttons": keyboard_rows(buttons, columns=columns)},
+            }
+        )
     await max_request("POST", "/messages", params={"chat_id": chat_id}, json=body)
 
 
@@ -1066,7 +1118,7 @@ async def guide_menu(chat_id: str, user_id: str) -> None:
     user = get_user(user_id) or {}
     roles = set(user.get("roles") or [])
     if "child" in roles:
-        await send_message(chat_id, child_guide(), [callback_button("Главное меню", "main:menu")])
+        await send_child_guide(chat_id)
     elif "parent" in roles:
         await send_message(chat_id, parent_guide(), [callback_button("Главное меню", "main:menu")])
     elif "staff" in roles:
@@ -1081,6 +1133,24 @@ async def guide_menu(chat_id: str, user_id: str) -> None:
                 callback_button("Для сотрудника", "guide:staff"),
             ],
         )
+
+
+async def send_child_guide(chat_id: str) -> None:
+    buttons = [callback_button("Главное меню", "main:menu")]
+    with contextlib.suppress(Exception):
+        image = await child_recommendations_image_attachment()
+        if image:
+            try:
+                await send_message_with_attachments(chat_id, child_guide(), [image], buttons)
+                return
+            except httpx.HTTPStatusError as exc:
+                if "attachment.not.ready" not in exc.response.text:
+                    raise
+                await asyncio.sleep(2)
+                await send_message_with_attachments(chat_id, child_guide(), [image], buttons)
+                return
+    logger.warning("Sending child guide without image")
+    await send_message(chat_id, child_guide(), buttons)
 
 
 def child_guide() -> str:
@@ -1564,7 +1634,7 @@ async def handle_callback(chat_id: str, user_id: str, payload: str) -> None:
         await guide_menu(chat_id, user_id)
         return
     if payload == "guide:child":
-        await send_message(chat_id, child_guide(), [callback_button("Главное меню", "main:menu")])
+        await send_child_guide(chat_id)
         return
     if payload == "guide:parent":
         await send_message(chat_id, parent_guide(), [callback_button("Главное меню", "main:menu")])
