@@ -511,14 +511,40 @@ def clear_state(user_id: str) -> None:
 
 
 def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
+    has_child_sos = False
+    has_staff_alarm = False
+    has_profile = False
+    if user_id:
+        has_child_sos = bool(
+            fetchone(
+                "select 1 from sos_family.links where child_user_id = %s and status = 'active' limit 1",
+                (user_id,),
+            )
+        )
+        has_staff_alarm = bool(
+            fetchone(
+                "select 1 from sos_org.staff where user_id = %s and status = 'approved' limit 1",
+                (user_id,),
+            )
+        )
+        user = get_user(user_id)
+        roles = set((user or {}).get("roles") or [])
+        has_profile = bool(roles or has_child_sos or has_staff_alarm)
+
     buttons = [
-        callback_button("SOS / Тревожная кнопка", "main:sos"),
         callback_button("Я родитель", "parent:menu"),
         callback_button("Я ребенок", "child:menu"),
         callback_button("Я сотрудник организации", "staff:menu"),
         callback_button("Рекомендации безопасности", "guide:menu"),
-        callback_button("Мои данные / связи", "profile:menu"),
     ]
+    alert_buttons: list[dict[str, Any]] = []
+    if has_child_sos:
+        alert_buttons.append(callback_button("SOS", "child:sos"))
+    if has_staff_alarm:
+        alert_buttons.append(callback_button("Тревожная кнопка", "staff:alert_menu"))
+    if has_profile:
+        buttons.append(callback_button("Мои данные / связи", "profile:menu"))
+    buttons = alert_buttons + buttons
     if user_id and user_id in ADMIN_USER_IDS:
         buttons.append(callback_button("Администрирование", "admin:menu"))
     return buttons
