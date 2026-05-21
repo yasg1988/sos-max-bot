@@ -116,6 +116,10 @@ def callback_button(text: str, payload: str) -> dict[str, Any]:
     return {"type": "callback", "text": text[:128], "payload": payload[:1024]}
 
 
+def link_button(text: str, url: str) -> dict[str, Any]:
+    return {"type": "link", "text": text[:128], "url": url}
+
+
 def message_button(text: str) -> dict[str, Any]:
     return {"type": "message", "text": text[:128]}
 
@@ -141,6 +145,17 @@ def keyboard_rows(buttons: list[dict[str, Any]], columns: int = 1) -> list[list[
     return rows
 
 
+def map_buttons(lat: float, lon: float) -> list[list[dict[str, Any]]]:
+    lat_s = f"{lat:.6f}"
+    lon_s = f"{lon:.6f}"
+    return [
+        [link_button("Google Map", f"https://www.google.com/maps/search/?api=1&query={lat_s},{lon_s}")],
+        [link_button("Яндекс карты", f"https://yandex.ru/maps/?pt={lon_s},{lat_s}&z=18&l=map")],
+        [link_button("Яндекс навигатор", f"https://yandex.ru/navi/?whatshere%5Bpoint%5D={lon_s},{lat_s}&whatshere%5Bzoom%5D=18")],
+        [link_button("2Gis", f"https://2gis.ru/geo/{lon_s},{lat_s}")],
+    ]
+
+
 async def send_message(chat_id: int | str, text: str, buttons: list[dict[str, Any]] | None = None, columns: int = 1) -> None:
     body: dict[str, Any] = {"text": trim_text(text)}
     if buttons:
@@ -148,6 +163,18 @@ async def send_message(chat_id: int | str, text: str, buttons: list[dict[str, An
             {
                 "type": "inline_keyboard",
                 "payload": {"buttons": keyboard_rows(buttons, columns=columns)},
+            }
+        ]
+    await max_request("POST", "/messages", params={"chat_id": chat_id}, json=body)
+
+
+async def send_message_rows(chat_id: int | str, text: str, rows: list[list[dict[str, Any]]]) -> None:
+    body: dict[str, Any] = {"text": trim_text(text)}
+    if rows:
+        body["attachments"] = [
+            {
+                "type": "inline_keyboard",
+                "payload": {"buttons": rows},
             }
         ]
     await max_request("POST", "/messages", params={"chat_id": chat_id}, json=body)
@@ -1018,15 +1045,17 @@ async def send_family_alert(chat_id: str, user_id: str, location: tuple[float, f
             (alert_id, parent_user_id),
         )
         target = parent_chat_id or parent_user_id
-        await send_message(
+        await send_message_rows(
             target,
             f"{label}\n\nРебенок: {child_name}\nГеолокация: {lat:.6f}, {lon:.6f}",
-            [
-                callback_button("Принял", f"famalert:accept:{alert_id}"),
-                callback_button("Еду", f"famalert:coming:{alert_id}"),
-                callback_button("Закрыть", f"famalert:close:{alert_id}"),
+            map_buttons(lat, lon)
+            + [
+                [
+                    callback_button("Принял", f"famalert:accept:{alert_id}"),
+                    callback_button("Еду", f"famalert:coming:{alert_id}"),
+                    callback_button("Закрыть", f"famalert:close:{alert_id}"),
+                ]
             ],
-            columns=3,
         )
     await send_message(chat_id, "Тревога отправлена родителям.", [callback_button("Главное меню", "main:menu")])
     clear_state(user_id)
