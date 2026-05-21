@@ -52,7 +52,6 @@ BASE_DIR = Path(__file__).resolve().parent
 RECOMMENDATION_IMAGES = {
     "child": BASE_DIR / "assets" / "child_recommendations.png",
     "parent": BASE_DIR / "assets" / "parent_recommendations.png",
-    "staff": BASE_DIR / "assets" / "staff_recommendations.png",
 }
 RECOMMENDATION_IMAGE_PAYLOADS: dict[str, dict[str, Any]] = {}
 
@@ -703,7 +702,6 @@ def clear_state(user_id: str) -> None:
 
 def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
     has_child_sos = False
-    has_staff_alarm = False
     has_profile = False
     is_child_only = False
     if user_id:
@@ -713,16 +711,11 @@ def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
                 (user_id,),
             )
         )
-        has_staff_alarm = bool(
-            fetchone(
-                "select 1 from sos_org.staff where user_id = %s and status = 'approved' limit 1",
-                (user_id,),
-            )
-        )
         user = get_user(user_id)
         roles = set((user or {}).get("roles") or [])
-        has_profile = bool(roles or has_child_sos or has_staff_alarm)
-        is_child_only = has_child_sos and not (roles & {"admin", "parent", "staff"}) and not has_staff_alarm
+        family_roles = roles & {"child", "parent"}
+        has_profile = bool(family_roles or has_child_sos)
+        is_child_only = has_child_sos and "parent" not in family_roles
 
     if is_child_only:
         return [
@@ -733,19 +726,14 @@ def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
     buttons = [
         callback_button("Я родитель", "parent:menu"),
         callback_button("Я ребенок", "child:menu"),
-        callback_button("Я сотрудник организации", "staff:menu"),
         callback_button("Рекомендации безопасности", "guide:menu"),
     ]
     alert_buttons: list[dict[str, Any]] = []
     if has_child_sos:
         alert_buttons.append(callback_button("Нужна помощь", "child:sos"))
-    if has_staff_alarm:
-        alert_buttons.append(callback_button("Тревожная кнопка", "staff:alert_menu"))
     if has_profile:
         buttons.append(callback_button("Мои данные / связи", "profile:menu"))
     buttons = alert_buttons + buttons
-    if user_id and user_id in ADMIN_USER_IDS:
-        buttons.append(callback_button("Администрирование", "admin:menu"))
     return buttons
 
 
@@ -754,7 +742,6 @@ def main_menu_text(with_greeting: bool = False) -> str:
     return (
         prefix
         + "Если ребенку нужна помощь, родители получат сигнал и геолокацию.\n"
-        "Если сотруднику учреждения нужна помощь, тревога уйдет ответственным.\n\n"
         "Сервис работает даже при ограничении мобильного интернета по белым спискам.\n\n"
         "Выберите раздел:"
     )
@@ -770,14 +757,7 @@ async def show_main(chat_id: str, user_id: str | None = None, *, with_greeting: 
             (user_id,),
         )
     )
-    has_staff_alarm = bool(
-        user_id
-        and fetchone(
-            "select 1 from sos_org.staff where user_id = %s and status = 'approved' limit 1",
-            (user_id,),
-        )
-    )
-    if has_child_sos and not (roles & {"admin", "parent", "staff"}) and not has_staff_alarm:
+    if has_child_sos and "parent" not in roles:
         text = ("Здравствуйте! Я чат-бот Ошмазик.\n\n" if with_greeting else "") + "Если нужна помощь, нажми кнопку."
     else:
         text = main_menu_text(with_greeting)
@@ -1275,15 +1255,13 @@ async def send_parent_location_response(
 async def guide_menu(chat_id: str, user_id: str) -> None:
     user = get_user(user_id) or {}
     roles = set(user.get("roles") or [])
-    guide_roles = roles & {"child", "parent", "staff"}
-    if len(guide_roles) != 1 or "admin" in roles:
+    guide_roles = roles & {"child", "parent"}
+    if len(guide_roles) != 1:
         await send_guide_choice(chat_id)
     elif "child" in guide_roles:
         await send_guide_with_image(chat_id, "child", child_guide())
     elif "parent" in guide_roles:
         await send_guide_with_image(chat_id, "parent", parent_guide())
-    elif "staff" in guide_roles:
-        await send_guide_with_image(chat_id, "staff", staff_guide())
 
 
 async def send_guide_choice(chat_id: str) -> None:
@@ -1293,7 +1271,6 @@ async def send_guide_choice(chat_id: str) -> None:
         [
             callback_button("Для ребенка", "guide:child"),
             callback_button("Для родителя", "guide:parent"),
-            callback_button("Для сотрудника", "guide:staff"),
         ],
     )
 
@@ -1351,12 +1328,11 @@ def staff_guide() -> str:
 
 async def profile_menu(chat_id: str, user_id: str) -> None:
     user = get_user(user_id) or {}
-    roles = ", ".join(user.get("roles") or []) or "не выбраны"
+    roles = ", ".join(role for role in (user.get("roles") or []) if role in {"child", "parent"}) or "не выбраны"
     family = fetchone("select count(*) from sos_family.links where (parent_user_id = %s or child_user_id = %s) and status = 'active'", (user_id, user_id))[0]
-    staff = fetchone("select count(*) from sos_org.staff where user_id = %s and status = 'approved'", (user_id,))[0]
     await send_message(
         chat_id,
-        f"Мои данные\n\nИмя: {user.get('display_name') or '-'}\nРоли: {roles}\nСемейные связи: {family}\nУчреждения: {staff}",
+        f"Мои данные\n\nИмя: {user.get('display_name') or '-'}\nРоли: {roles}\nСемейные связи: {family}",
         [callback_button("Изменить имя", "profile:name"), callback_button("Главное меню", "main:menu")],
     )
 
@@ -1470,6 +1446,10 @@ async def handle_text_state(chat_id: str, user_id: str, text: str, update: dict[
     if not state_item:
         return False
     state, data = state_item
+    if state.startswith("staff_") or state.startswith("admin_"):
+        clear_state(user_id)
+        await show_main(chat_id, user_id)
+        return True
 
     if state == "await_name":
         if not NAME_RE.match(text):
@@ -1682,19 +1662,20 @@ async def handle_text_state(chat_id: str, user_id: str, text: str, update: dict[
 
 async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id: str | None = None) -> None:
     parts = payload.split(":")
+    if parts[0] in {"staff", "staffalert", "staffreq", "orgalert", "admin", "adminstaff"}:
+        clear_state(user_id)
+        await send_message(chat_id, "Раздел организаций вынесен в отдельный бот и здесь больше не используется.", [callback_button("Главное меню", "main:menu")])
+        return
     if payload == "main:menu":
         clear_state(user_id)
         await show_main(chat_id, user_id)
         return
     if payload == "main:sos":
-        staff_rows = active_staff(user_id)
         buttons = []
         if fetchone("select 1 from sos_family.links where child_user_id = %s and status = 'active' limit 1", (user_id,)):
             buttons.extend([callback_button("Опасность", "child:sos"), callback_button("Я потерялся", "child:lost")])
-        if staff_rows:
-            buttons.append(callback_button("Тревога организации", "staff:alert_menu"))
         if not buttons:
-            buttons = [callback_button("Я ребенок", "child:menu"), callback_button("Я сотрудник", "staff:menu")]
+            buttons = [callback_button("Я ребенок", "child:menu")]
         await send_message(chat_id, "Выберите тревожный сценарий.", buttons + [callback_button("Главное меню", "main:menu")])
         return
     if payload == "parent:menu":
@@ -1950,7 +1931,7 @@ async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id:
         await send_guide_with_image(chat_id, "parent", parent_guide())
         return
     if payload == "guide:staff":
-        await send_guide_with_image(chat_id, "staff", staff_guide())
+        await send_guide_choice(chat_id)
         return
     if payload == "profile:menu":
         await profile_menu(chat_id, user_id)
@@ -2074,16 +2055,16 @@ async def process_update(update: dict[str, Any]) -> None:
         await show_main(chat_id, user_id)
         return
     if text.startswith("/bind_alert"):
-        await bind_chat(chat_id, user_id, text, "alert")
+        await show_main(chat_id, user_id)
         return
     if text.startswith("/bind_approval"):
-        await bind_chat(chat_id, user_id, text, "approval")
+        await show_main(chat_id, user_id)
         return
     if text.startswith("/add_org"):
-        await handle_callback(chat_id, user_id, "admin:add_org")
+        await show_main(chat_id, user_id)
         return
     if text.startswith("/orgs"):
-        await list_orgs(chat_id)
+        await show_main(chat_id, user_id)
         return
     if await handle_text_state(chat_id, user_id, text, update):
         return
