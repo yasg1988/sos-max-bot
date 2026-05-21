@@ -1117,22 +1117,27 @@ async def send_family_alert(chat_id: str, user_id: str, location: tuple[float, f
 async def guide_menu(chat_id: str, user_id: str) -> None:
     user = get_user(user_id) or {}
     roles = set(user.get("roles") or [])
-    if "child" in roles:
+    guide_roles = roles & {"child", "parent", "staff"}
+    if len(guide_roles) != 1 or "admin" in roles:
+        await send_guide_choice(chat_id)
+    elif "child" in guide_roles:
         await send_child_guide(chat_id)
-    elif "parent" in roles:
+    elif "parent" in guide_roles:
         await send_message(chat_id, parent_guide(), [callback_button("Главное меню", "main:menu")])
-    elif "staff" in roles:
+    elif "staff" in guide_roles:
         await send_message(chat_id, staff_guide(), [callback_button("Главное меню", "main:menu")])
-    else:
-        await send_message(
-            chat_id,
-            "Для кого показать рекомендации?",
-            [
-                callback_button("Для ребенка", "guide:child"),
-                callback_button("Для родителя", "guide:parent"),
-                callback_button("Для сотрудника", "guide:staff"),
-            ],
-        )
+
+
+async def send_guide_choice(chat_id: str) -> None:
+    await send_message(
+        chat_id,
+        "Для кого показать рекомендации?",
+        [
+            callback_button("Для ребенка", "guide:child"),
+            callback_button("Для родителя", "guide:parent"),
+            callback_button("Для сотрудника", "guide:staff"),
+        ],
+    )
 
 
 async def send_child_guide(chat_id: str) -> None:
