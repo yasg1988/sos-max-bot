@@ -764,20 +764,40 @@ async def parent_menu(chat_id: str, user_id: str) -> None:
         select u.display_name, l.status
         from sos_family.links l
         join sos_core.users u on u.user_id = l.child_user_id
-        where l.parent_user_id = %s
+        where l.parent_user_id = %s and l.status in ('active', 'pending')
         order by l.created_at desc
         """,
         (user_id,),
     )
     children = "\n".join(f"- {name or 'Ребенок'}: {status}" for name, status in rows) or "Пока нет привязанных детей."
+    buttons = [callback_button("Добавить ребенка", "parent:create_code")]
+    if rows:
+        buttons.append(callback_button("Управление детьми", "parent:children"))
+    buttons.append(callback_button("Главное меню", "main:menu"))
     await send_message(
         chat_id,
         f"Раздел родителя\n\nДети:\n{children}",
-        [
-            callback_button("Добавить ребенка", "parent:create_code"),
-            callback_button("Главное меню", "main:menu"),
-        ],
+        buttons,
     )
+
+
+async def parent_children_menu(chat_id: str, user_id: str) -> None:
+    rows = fetchall(
+        """
+        select l.id, u.display_name, l.status
+        from sos_family.links l
+        join sos_core.users u on u.user_id = l.child_user_id
+        where l.parent_user_id = %s and l.status = 'active'
+        order by u.display_name nulls last, l.created_at desc
+        """,
+        (user_id,),
+    )
+    if not rows:
+        await send_message(chat_id, "Активных связей с детьми пока нет.", [callback_button("Назад", "parent:menu")])
+        return
+    buttons = [callback_button(f"Отключить: {name or 'Ребенок'}", f"parentchild:remove:{link_id}") for link_id, name, _status in rows]
+    buttons.append(callback_button("Назад", "parent:menu"))
+    await send_message(chat_id, "Выберите связь, которую нужно отключить.", buttons)
 
 
 async def child_menu(chat_id: str, user_id: str) -> None:
@@ -1542,11 +1562,50 @@ async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id:
     if payload == "parent:menu":
         await parent_menu(chat_id, user_id)
         return
+    if payload == "parent:children":
+        await parent_children_menu(chat_id, user_id)
+        return
     if payload == "parent:create_code":
         add_role(user_id, "parent")
         code = await asyncio.to_thread(create_parent_code, user_id)
         await send_message(chat_id, f"Одноразовый код для ребенка: {code}\n\nКод действует {FAMILY_CODE_TTL_MINUTES} минут. Ребенок должен открыть раздел «Я ребенок» и ввести этот код.")
         return
+    if parts[0] == "parentchild" and len(parts) == 3:
+        action, link_id = parts[1], parts[2]
+        row = fetchone(
+            """
+            select l.id, l.child_user_id, u.display_name, u.chat_id
+            from sos_family.links l
+            join sos_core.users u on u.user_id = l.child_user_id
+            where l.id = %s and l.parent_user_id = %s and l.status = 'active'
+            """,
+            (link_id, user_id),
+        )
+        if not row:
+            await send_message(chat_id, "Активная связь не найдена.", [callback_button("Управление детьми", "parent:children")])
+            return
+        _link_id, _child_user_id, child_name, child_chat_id = row
+        if action == "remove":
+            await send_message(
+                chat_id,
+                f"Отключить связь с ребенком {child_name or 'Ребенок'}?",
+                [
+                    callback_button("Да, отключить", f"parentchild:confirm_remove:{link_id}"),
+                    callback_button("Назад", "parent:children"),
+                ],
+            )
+            return
+        if action == "confirm_remove":
+            execute(
+                "update sos_family.links set status = 'removed', decided_at = now() where id = %s and parent_user_id = %s and status = 'active'",
+                (link_id, user_id),
+            )
+            parent = get_user(user_id) or {}
+            await send_message(chat_id, f"Связь с ребенком {child_name or 'Ребенок'} отключена.", [callback_button("Управление детьми", "parent:children"), callback_button("Главное меню", "main:menu")])
+            if child_chat_id:
+                await send_message(child_chat_id, f"Родитель {parent.get('display_name') or 'Родитель'} отключил семейную связь.", [callback_button("Главное меню", "main:menu")])
+            audit(user_id, chat_id, "family_link_removed", "family_link", link_id)
+            return
     if payload == "child:menu":
         await child_menu(chat_id, user_id)
         return
