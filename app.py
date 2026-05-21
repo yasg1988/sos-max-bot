@@ -49,8 +49,12 @@ ORG_ALERT_COOLDOWN_MINUTES = int(os.getenv("ORG_ALERT_COOLDOWN_MINUTES", "10"))
 TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 BOT_USER_ID: int | None = None
 BASE_DIR = Path(__file__).resolve().parent
-CHILD_RECOMMENDATIONS_IMAGE = BASE_DIR / "assets" / "child_recommendations.png"
-CHILD_RECOMMENDATIONS_IMAGE_PAYLOAD: dict[str, Any] | None = None
+RECOMMENDATION_IMAGES = {
+    "child": BASE_DIR / "assets" / "child_recommendations.png",
+    "parent": BASE_DIR / "assets" / "parent_recommendations.png",
+    "staff": BASE_DIR / "assets" / "staff_recommendations.png",
+}
+RECOMMENDATION_IMAGE_PAYLOADS: dict[str, dict[str, Any]] = {}
 
 NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЁё0-9 .,'\"()\\-]{2,120}$")
 INN_RE = re.compile(r"^\d{10}(\d{2})?$")
@@ -136,13 +140,18 @@ async def upload_image(path: Path) -> dict[str, Any] | None:
     return payload
 
 
-async def child_recommendations_image_attachment() -> dict[str, Any] | None:
-    global CHILD_RECOMMENDATIONS_IMAGE_PAYLOAD
-    if CHILD_RECOMMENDATIONS_IMAGE_PAYLOAD is None:
-        CHILD_RECOMMENDATIONS_IMAGE_PAYLOAD = await upload_image(CHILD_RECOMMENDATIONS_IMAGE)
-    if not CHILD_RECOMMENDATIONS_IMAGE_PAYLOAD:
+async def recommendation_image_attachment(kind: str) -> dict[str, Any] | None:
+    path = RECOMMENDATION_IMAGES.get(kind)
+    if path is None:
         return None
-    return {"type": "image", "payload": CHILD_RECOMMENDATIONS_IMAGE_PAYLOAD}
+    if kind not in RECOMMENDATION_IMAGE_PAYLOADS:
+        payload = await upload_image(path)
+        if payload:
+            RECOMMENDATION_IMAGE_PAYLOADS[kind] = payload
+    payload = RECOMMENDATION_IMAGE_PAYLOADS.get(kind)
+    if not payload:
+        return None
+    return {"type": "image", "payload": payload}
 
 
 def callback_button(text: str, payload: str) -> dict[str, Any]:
@@ -1121,11 +1130,11 @@ async def guide_menu(chat_id: str, user_id: str) -> None:
     if len(guide_roles) != 1 or "admin" in roles:
         await send_guide_choice(chat_id)
     elif "child" in guide_roles:
-        await send_child_guide(chat_id)
+        await send_guide_with_image(chat_id, "child", child_guide())
     elif "parent" in guide_roles:
-        await send_message(chat_id, parent_guide(), [callback_button("Главное меню", "main:menu")])
+        await send_guide_with_image(chat_id, "parent", parent_guide())
     elif "staff" in guide_roles:
-        await send_message(chat_id, staff_guide(), [callback_button("Главное меню", "main:menu")])
+        await send_guide_with_image(chat_id, "staff", staff_guide())
 
 
 async def send_guide_choice(chat_id: str) -> None:
@@ -1140,22 +1149,22 @@ async def send_guide_choice(chat_id: str) -> None:
     )
 
 
-async def send_child_guide(chat_id: str) -> None:
+async def send_guide_with_image(chat_id: str, kind: str, text: str) -> None:
     buttons = [callback_button("Главное меню", "main:menu")]
     with contextlib.suppress(Exception):
-        image = await child_recommendations_image_attachment()
+        image = await recommendation_image_attachment(kind)
         if image:
             try:
-                await send_message_with_attachments(chat_id, child_guide(), [image], buttons)
+                await send_message_with_attachments(chat_id, text, [image], buttons)
                 return
             except httpx.HTTPStatusError as exc:
                 if "attachment.not.ready" not in exc.response.text:
                     raise
                 await asyncio.sleep(2)
-                await send_message_with_attachments(chat_id, child_guide(), [image], buttons)
+                await send_message_with_attachments(chat_id, text, [image], buttons)
                 return
-    logger.warning("Sending child guide without image")
-    await send_message(chat_id, child_guide(), buttons)
+    logger.warning("Sending %s guide without image", kind)
+    await send_message(chat_id, text, buttons)
 
 
 def child_guide() -> str:
@@ -1639,13 +1648,13 @@ async def handle_callback(chat_id: str, user_id: str, payload: str) -> None:
         await guide_menu(chat_id, user_id)
         return
     if payload == "guide:child":
-        await send_child_guide(chat_id)
+        await send_guide_with_image(chat_id, "child", child_guide())
         return
     if payload == "guide:parent":
-        await send_message(chat_id, parent_guide(), [callback_button("Главное меню", "main:menu")])
+        await send_guide_with_image(chat_id, "parent", parent_guide())
         return
     if payload == "guide:staff":
-        await send_message(chat_id, staff_guide(), [callback_button("Главное меню", "main:menu")])
+        await send_guide_with_image(chat_id, "staff", staff_guide())
         return
     if payload == "profile:menu":
         await profile_menu(chat_id, user_id)
