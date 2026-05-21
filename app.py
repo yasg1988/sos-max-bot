@@ -1365,10 +1365,14 @@ async def profile_menu(chat_id: str, user_id: str) -> None:
         lines.append("")
         lines.append("Родители:")
         lines.extend(f"- {name or 'Родитель'}" for (name,) in parents)
+    buttons = [callback_button("Изменить имя", "profile:name")]
+    if children:
+        buttons.append(callback_button("Управление детьми", "parent:children"))
+    buttons.append(callback_button("Главное меню", "main:menu"))
     await send_message(
         chat_id,
         "\n".join(lines),
-        [callback_button("Изменить имя", "profile:name"), callback_button("Главное меню", "main:menu")],
+        buttons,
     )
 
 
