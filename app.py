@@ -1213,7 +1213,7 @@ async def send_parent_location_response(
         await send_message_rows(
             parent_chat_id,
             f"Геолокация ребенка\n\nРебенок: {child_name}\nГеолокация: {lat:.6f}, {lon:.6f}",
-            map_buttons(lat, lon),
+            map_buttons(lat, lon) + [[callback_button("Главное меню", "main:menu")]],
         )
     await send_message(chat_id, "Геолокация отправлена родителю.", [callback_button("Главное меню", "main:menu")])
     clear_state(user_id)
