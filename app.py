@@ -120,6 +120,15 @@ async def max_request(method: str, path: str, **kwargs: Any) -> httpx.Response:
     return response
 
 
+async def answer_callback(callback_id: str, message: dict[str, Any] | None = None, notification: str | None = None) -> None:
+    body: dict[str, Any] = {}
+    if message is not None:
+        body["message"] = message
+    if notification is not None:
+        body["notification"] = notification
+    await max_request("POST", "/answers", params={"callback_id": callback_id}, json=body)
+
+
 async def upload_image(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         logger.warning("Image asset not found: %s", path)
@@ -239,6 +248,20 @@ async def send_message_with_attachments(
             }
         )
     await max_request("POST", "/messages", params={"chat_id": chat_id}, json=body)
+
+
+def inline_keyboard_attachment(rows: list[list[dict[str, Any]]]) -> dict[str, Any]:
+    return {
+        "type": "inline_keyboard",
+        "payload": {"buttons": rows},
+    }
+
+
+def message_body(text: str, rows: list[list[dict[str, Any]]] | None = None) -> dict[str, Any]:
+    body: dict[str, Any] = {"text": trim_text(text)}
+    if rows:
+        body["attachments"] = [inline_keyboard_attachment(rows)]
+    return body
 
 
 async def send_user_message(user_id: int | str, text: str, buttons: list[dict[str, Any]] | None = None, columns: int = 1) -> None:
@@ -505,6 +528,18 @@ def extract_callback_payload(update: dict[str, Any]) -> str:
     if isinstance(update.get("payload"), str):
         return update["payload"].strip()
     return ""
+
+
+def extract_callback_id(update: dict[str, Any]) -> str | None:
+    callback = update.get("callback")
+    if isinstance(callback, dict):
+        for key in ("callback_id", "callbackId", "id"):
+            if callback.get(key) is not None:
+                return str(callback[key])
+    for key in ("callback_id", "callbackId"):
+        if update.get(key) is not None:
+            return str(update[key])
+    return None
 
 
 def extract_location(update: dict[str, Any]) -> tuple[float, float, dict[str, Any]] | None:
@@ -1487,7 +1522,7 @@ async def handle_text_state(chat_id: str, user_id: str, text: str, update: dict[
     return False
 
 
-async def handle_callback(chat_id: str, user_id: str, payload: str) -> None:
+async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id: str | None = None) -> None:
     parts = payload.split(":")
     if payload == "main:menu":
         clear_state(user_id)
@@ -1551,9 +1586,17 @@ async def handle_callback(chat_id: str, user_id: str, payload: str) -> None:
         action, alert_id = parts[1], parts[2]
         status = "accepted" if action in {"accept", "coming"} else "closed"
         execute("update sos_family.alerts set status = %s, accepted_by_user_id = %s, accepted_at = coalesce(accepted_at, now()), closed_at = case when %s = 'closed' then now() else closed_at end where id = %s", (status, user_id, status, alert_id))
-        row = fetchone("select a.child_user_id, u.chat_id, u.display_name from sos_family.alerts a join sos_core.users u on u.user_id = a.child_user_id where a.id = %s", (alert_id,))
+        row = fetchone(
+            """
+            select a.child_user_id, u.chat_id, u.display_name, a.alert_type, a.latitude, a.longitude
+            from sos_family.alerts a
+            join sos_core.users u on u.user_id = a.child_user_id
+            where a.id = %s
+            """,
+            (alert_id,),
+        )
         actor = get_user(user_id) or {}
-        await send_message(chat_id, "Статус тревоги обновлен.")
+        await send_message(chat_id, "Статус тревоги обновлен.", [callback_button("Главное меню", "main:menu")])
         if row and row[1]:
             parent_name = actor.get("display_name") or "Родитель"
             child_text = "Тревога закрыта родителем."
@@ -1562,6 +1605,11 @@ async def handle_callback(chat_id: str, user_id: str, payload: str) -> None:
             elif action == "coming":
                 child_text = f"Родитель {parent_name} едет."
             await send_message(row[1], child_text)
+        if action == "close" and callback_id and row and row[4] is not None and row[5] is not None:
+            label = "Нужна помощь" if row[3] == "sos" else "Ребенок потерялся" if row[3] == "lost" else "Тестовая тревога"
+            text = f"{label}\n\nРебенок: {row[2] or 'Ребенок'}\nГеолокация: {float(row[4]):.6f}, {float(row[5]):.6f}"
+            with contextlib.suppress(Exception):
+                await answer_callback(callback_id, message_body(text, map_buttons(float(row[4]), float(row[5]))))
         return
     if payload == "staff:menu":
         await staff_menu(chat_id, user_id)
@@ -1707,7 +1755,7 @@ async def process_update(update: dict[str, Any]) -> None:
     update_type = update.get("update_type")
     if update_type == "message_callback":
         payload = extract_callback_payload(update)
-        await handle_callback(chat_id, user_id, payload)
+        await handle_callback(chat_id, user_id, payload, extract_callback_id(update))
         return
     text = extract_text(update)
     state = get_state(user_id)
