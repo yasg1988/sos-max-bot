@@ -664,6 +664,16 @@ async def child_menu(chat_id: str, user_id: str) -> None:
     )
     text = "Раздел ребенка\n\n"
     text += "Родители: " + (", ".join(row[0] or "Родитель" for row in parents) if parents else "пока не привязаны")
+    if not parents:
+        await send_message(
+            chat_id,
+            text,
+            [
+                callback_button("Ввести код родителя", "child:enter_code"),
+                callback_button("Главное меню", "main:menu"),
+            ],
+        )
+        return
     await send_message(
         chat_id,
         text,
