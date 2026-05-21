@@ -150,7 +150,7 @@ def map_buttons(lat: float, lon: float) -> list[list[dict[str, Any]]]:
     lon_s = f"{lon:.6f}"
     return [
         [link_button("Google Map", f"https://www.google.com/maps/search/?api=1&query={lat_s},{lon_s}")],
-        [link_button("Яндекс карты", f"https://yandex.ru/maps/?pt={lon_s},{lat_s}&z=18&l=map")],
+        [link_button("Яндекс карты", f"https://yandex.com/maps/?ll={lon_s}%2C{lat_s}&z=18&text={lat_s}%2C{lon_s}")],
         [link_button("Яндекс навигатор", f"https://yandex.ru/navi/?whatshere%5Bpoint%5D={lon_s},{lat_s}&whatshere%5Bzoom%5D=18")],
         [link_button("2Gis", f"https://2gis.ru/geo/{lon_s},{lat_s}")],
     ]
