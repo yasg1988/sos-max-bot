@@ -420,21 +420,32 @@ def extract_callback_payload(update: dict[str, Any]) -> str:
 
 
 def extract_location(update: dict[str, Any]) -> tuple[float, float, dict[str, Any]] | None:
-    body = update.get("message", {}).get("body", {}) or {}
-    candidates: list[Any] = []
-    if isinstance(body, dict):
-        candidates.extend([body.get("location"), body.get("geo_location"), body.get("geo"), body])
-    for attachment in update.get("message", {}).get("attachments", []) or []:
-        if isinstance(attachment, dict):
-            candidates.append(attachment.get("payload") or attachment)
-    for item in candidates:
-        if not isinstance(item, dict):
-            continue
-        lat = item.get("latitude") or item.get("lat")
-        lon = item.get("longitude") or item.get("lon") or item.get("lng")
-        if lat is not None and lon is not None:
-            return float(lat), float(lon), item
-    return None
+    def parse_coord(value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(str(value).replace(",", "."))
+        except (TypeError, ValueError):
+            return None
+
+    def walk(value: Any) -> tuple[float, float, dict[str, Any]] | None:
+        if isinstance(value, dict):
+            lat = parse_coord(value.get("latitude", value.get("lat")))
+            lon = parse_coord(value.get("longitude", value.get("lon", value.get("lng"))))
+            if lat is not None and lon is not None:
+                return lat, lon, value
+            for nested in value.values():
+                found = walk(nested)
+                if found:
+                    return found
+        elif isinstance(value, list):
+            for item in value:
+                found = walk(item)
+                if found:
+                    return found
+        return None
+
+    return walk(update)
 
 
 def upsert_user(update: dict[str, Any], chat_id: str | None) -> str | None:
