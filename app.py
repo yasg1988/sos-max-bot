@@ -524,15 +524,19 @@ def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
     return buttons
 
 
-async def show_main(chat_id: str, user_id: str | None = None) -> None:
-    await send_message(
-        chat_id,
-        "Если ребенку нужна помощь, родители получат сигнал и геолокацию.\n"
+def main_menu_text(with_greeting: bool = False) -> str:
+    prefix = "Здравствуйте! Я чат-бот Ошмазик.\n\n" if with_greeting else ""
+    return (
+        prefix
+        + "Если ребенку нужна помощь, родители получат сигнал и геолокацию.\n"
         "Если сотруднику учреждения нужна помощь, тревога уйдет ответственным.\n\n"
         "Сервис работает даже при ограничении мобильного интернета по белым спискам.\n\n"
-        "Выберите раздел:",
-        main_buttons(user_id),
+        "Выберите раздел:"
     )
+
+
+async def show_main(chat_id: str, user_id: str | None = None, *, with_greeting: bool = False) -> None:
+    await send_message(chat_id, main_menu_text(with_greeting), main_buttons(user_id))
 
 
 async def ask_name(chat_id: str, user_id: str, next_state: str, role_label: str) -> None:
@@ -1343,7 +1347,12 @@ async def process_update(update: dict[str, Any]) -> None:
     if state and state[0] == "child_await_location":
         if await handle_text_state(chat_id, user_id, text, update):
             return
-    if update_type == "bot_started" or text.lower() in {"/start", "старт", "меню", "главное меню"}:
+    normalized_text = text.lower()
+    if update_type == "bot_started" or normalized_text in {"/start", "старт"}:
+        clear_state(user_id)
+        await show_main(chat_id, user_id, with_greeting=True)
+        return
+    if "меню" in normalized_text:
         clear_state(user_id)
         await show_main(chat_id, user_id)
         return
