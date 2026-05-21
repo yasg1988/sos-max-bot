@@ -510,7 +510,9 @@ def extract_text(update: dict[str, Any]) -> str:
     body = update.get("message", {}).get("body", {}) or {}
     if isinstance(body, dict):
         if isinstance(body.get("text"), str):
-            return body["text"].strip()
+            text = body["text"].strip()
+            if text:
+                return text
     phone = extract_phone(update)
     if phone:
         return phone
@@ -519,6 +521,7 @@ def extract_text(update: dict[str, Any]) -> str:
 
 def extract_phone(update: dict[str, Any]) -> str:
     def phone_from_vcard(vcard: str) -> str:
+        vcard = vcard.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\r\n", "\n").replace("\r", "\n")
         for line in vcard.splitlines():
             if line.upper().startswith("TEL"):
                 value = line.split(":", 1)[-1].strip()
