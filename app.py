@@ -333,6 +333,17 @@ def migrate() -> None:
                 closed_at timestamptz
             );
 
+            create table if not exists sos_org.alert_chats (
+                id text primary key,
+                organization_id text not null references sos_org.organizations(id) on delete cascade,
+                chat_id text not null,
+                title text,
+                is_active boolean not null default true,
+                created_by_user_id text,
+                created_at timestamptz not null default now(),
+                unique(organization_id, chat_id)
+            );
+
             create index if not exists sos_family_links_child_idx on sos_family.links(child_user_id, status);
             create index if not exists sos_org_staff_user_status_idx on sos_org.staff(user_id, status);
             create index if not exists sos_org_alerts_staff_created_idx on sos_org.alerts(staff_id, created_at desc);
@@ -686,6 +697,23 @@ def find_org_by_inn(inn: str, org_type: str | None = None) -> dict[str, Any] | N
     return {"id": row[0], "org_type": row[1], "name": row[2], "inn": row[3], "status": row[4], "approval_chat_id": row[5], "alert_chat_id": row[6]}
 
 
+def get_org_alert_chat_ids(org_id: str) -> list[str]:
+    rows = fetchall(
+        """
+        select chat_id
+        from sos_org.alert_chats
+        where organization_id = %s and is_active = true
+        order by created_at
+        """,
+        (org_id,),
+    )
+    chat_ids = [str(row[0]) for row in rows]
+    legacy = fetchone("select alert_chat_id from sos_org.organizations where id = %s", (org_id,))
+    if legacy and legacy[0] and str(legacy[0]) not in chat_ids:
+        chat_ids.append(str(legacy[0]))
+    return chat_ids
+
+
 async def start_staff_registration(chat_id: str, user_id: str, staff_type: str) -> None:
     set_state(user_id, "staff_await_inn", {"staff_type": staff_type})
     await send_message(chat_id, "Введите ИНН учреждения цифрами.\n\nПо ИНН бот найдет подключенную школу или медорганизацию.")
@@ -814,7 +842,7 @@ def cooldown_remaining(staff_id: str) -> int:
 async def create_org_alert(chat_id: str, user_id: str, staff_id: str, is_test: bool) -> None:
     row = fetchone(
         """
-        select s.id, s.full_name, s.phone, s.position, o.id, o.name, o.org_type, o.alert_chat_id
+        select s.id, s.full_name, s.phone, s.position, o.id, o.name, o.org_type
         from sos_org.staff s
         join sos_org.organizations o on o.id = s.organization_id
         where s.id = %s and s.user_id = %s and s.status = 'approved' and o.status = 'active'
@@ -824,8 +852,9 @@ async def create_org_alert(chat_id: str, user_id: str, staff_id: str, is_test: b
     if not row:
         await send_message(chat_id, "Не найдено подтвержденное учреждение для тревоги.", [callback_button("Главное меню", "main:menu")])
         return
-    staff_id, full_name, phone, position, org_id, org_name, org_type, alert_chat_id = row
-    if not alert_chat_id:
+    staff_id, full_name, phone, position, org_id, org_name, org_type = row
+    alert_chat_ids = get_org_alert_chat_ids(org_id)
+    if not alert_chat_ids:
         await send_message(chat_id, "Для учреждения пока не назначен чат тревог. Обратитесь к администратору.", [callback_button("Главное меню", "main:menu")])
         return
     if not is_test:
@@ -851,9 +880,10 @@ async def create_org_alert(chat_id: str, user_id: str, staff_id: str, is_test: b
         f"Должность: {position or '-'}\n"
         f"Время: {now_utc().strftime('%d.%m.%Y %H:%M:%S')} UTC"
     )
-    await send_message(alert_chat_id, text, [callback_button("Принял", f"orgalert:accept:{alert_id}")])
+    for alert_chat_id in alert_chat_ids:
+        await send_message(alert_chat_id, text, [callback_button("Принял", f"orgalert:accept:{alert_id}")])
     await send_message(chat_id, "Тестовая тревога отправлена." if is_test else "Тревога отправлена. Ожидайте подтверждения принятия.", [callback_button("Главное меню", "main:menu")])
-    audit(user_id, chat_id, "org_alert_sent", "org_alert", alert_id, {"is_test": is_test, "organization_id": org_id})
+    audit(user_id, chat_id, "org_alert_sent", "org_alert", alert_id, {"is_test": is_test, "organization_id": org_id, "alert_chat_ids": alert_chat_ids})
 
 
 async def child_sos_start(chat_id: str, user_id: str, alert_type: str) -> None:
@@ -986,9 +1016,13 @@ async def admin_menu(chat_id: str, user_id: str) -> None:
     pending = fetchone("select count(*) from sos_org.staff_requests where status = 'pending'")[0]
     await send_message(
         chat_id,
-        f"Администрирование\n\nОрганизаций: {org_count}\nЗаявок сотрудников: {pending}\n\nКоманды в чате с ботом:\n/add_org - добавить учреждение\n/bind_approval ИНН - привязать текущий чат заявок\n/bind_alert ИНН - привязать текущий чат тревог\n/orgs - список учреждений",
+        f"Администрирование\n\nОрганизаций: {org_count}\nЗаявок сотрудников: {pending}\n\n"
+        "Добавление учреждений и чатов можно выполнить кнопками ниже.\n"
+        "Если удобнее командами: /add_org и /orgs.",
         [
             callback_button("Добавить организацию", "admin:add_org"),
+            callback_button("Чат заявок", "admin:set_approval_chat"),
+            callback_button("Чат тревог", "admin:add_alert_chat"),
             callback_button("Список организаций", "admin:orgs"),
             callback_button("Главное меню", "main:menu"),
         ],
@@ -996,13 +1030,25 @@ async def admin_menu(chat_id: str, user_id: str) -> None:
 
 
 async def list_orgs(chat_id: str) -> None:
-    rows = fetchall("select org_type, name, inn, status, approval_chat_id, alert_chat_id from sos_org.organizations order by created_at desc limit 30")
+    rows = fetchall(
+        """
+        select o.org_type, o.name, o.inn, o.status, o.approval_chat_id,
+               count(ac.id) filter (where ac.is_active = true) as alert_chat_count,
+               o.alert_chat_id
+        from sos_org.organizations o
+        left join sos_org.alert_chats ac on ac.organization_id = o.id
+        group by o.id
+        order by o.created_at desc
+        limit 30
+        """
+    )
     if not rows:
         await send_message(chat_id, "Организаций пока нет.")
         return
     lines = ["Организации:"]
-    for org_type, name, inn, status, approval, alert in rows:
-        lines.append(f"- {name} ({org_type}), ИНН {inn}, {status}, заявки: {'+' if approval else '-'}, тревоги: {'+' if alert else '-'}")
+    for org_type, name, inn, status, approval, alert_count, legacy_alert in rows:
+        total_alert_chats = int(alert_count or 0) + (1 if legacy_alert else 0)
+        lines.append(f"- {name} ({org_type}), ИНН {inn}, {status}, заявки: {'+' if approval else '-'}, чатов тревог: {total_alert_chats}")
     await send_message(chat_id, "\n".join(lines), [callback_button("Главное меню", "main:menu")])
 
 
@@ -1019,8 +1065,17 @@ async def bind_chat(chat_id: str, user_id: str, text: str, bind_type: str) -> No
     if not org:
         await send_message(chat_id, "Организация с таким ИНН не найдена.")
         return
-    field = "alert_chat_id" if bind_type == "alert" else "approval_chat_id"
-    execute(f"update sos_org.organizations set {field} = %s, updated_at = now() where id = %s", (chat_id, org["id"]))
+    if bind_type == "alert":
+        execute(
+            """
+            insert into sos_org.alert_chats (id, organization_id, chat_id, created_by_user_id)
+            values (%s, %s, %s, %s)
+            on conflict (organization_id, chat_id) do update set is_active = true
+            """,
+            (new_id(), org["id"], chat_id, user_id),
+        )
+    else:
+        execute("update sos_org.organizations set approval_chat_id = %s, updated_at = now() where id = %s", (chat_id, org["id"]))
     audit(user_id, chat_id, f"bind_{bind_type}_chat", "organization", org["id"], {"inn": inn})
     await send_message(chat_id, f"Чат привязан к организации: {org['name']}\nНазначение: {'тревоги' if bind_type == 'alert' else 'заявки'}")
 
@@ -1169,7 +1224,60 @@ async def handle_text_state(chat_id: str, user_id: str, text: str, update: dict[
         )
         clear_state(user_id)
         audit(user_id, chat_id, "organization_created", "organization", org_id, {"inn": inn})
-        await send_message(chat_id, f"Организация добавлена:\n{data['name']}\nИНН: {inn}\n\nТеперь добавьте бота в нужные чаты и используйте /bind_approval ИНН и /bind_alert ИНН.", [callback_button("Администрирование", "admin:menu")])
+        await send_message(
+            chat_id,
+            f"Организация добавлена:\n{data['name']}\nИНН: {inn}\n\n"
+            "Теперь можно назначить чат подтверждения заявок и один или несколько чатов тревог в админке.",
+            [
+                callback_button("Чат заявок", "admin:set_approval_chat"),
+                callback_button("Чат тревог", "admin:add_alert_chat"),
+                callback_button("Администрирование", "admin:menu"),
+            ],
+        )
+        return True
+
+    if state in {"admin_approval_await_inn", "admin_alert_await_inn"}:
+        inn = clean_inn(text)
+        if not INN_RE.match(inn):
+            await send_message(chat_id, "ИНН должен содержать 10 или 12 цифр.")
+            return True
+        org = find_org_by_inn(inn)
+        if not org:
+            await send_message(chat_id, "Организация с таким ИНН не найдена.")
+            return True
+        next_state = "admin_approval_await_chat_id" if state == "admin_approval_await_inn" else "admin_alert_await_chat_id"
+        set_state(user_id, next_state, {"organization_id": org["id"], "org_name": org["name"], "inn": inn})
+        await send_message(chat_id, f"Организация: {org['name']}\nИНН: {inn}\n\nВведите id чата. Для группового чата обычно это отрицательное число.")
+        return True
+
+    if state == "admin_approval_await_chat_id":
+        chat_id_value = text.strip()
+        if not re.fullmatch(r"-?\d{3,30}", chat_id_value):
+            await send_message(chat_id, "Введите числовой id чата, например -123456789.")
+            return True
+        execute("update sos_org.organizations set approval_chat_id = %s, updated_at = now() where id = %s", (chat_id_value, data["organization_id"]))
+        clear_state(user_id)
+        audit(user_id, chat_id, "admin_set_approval_chat", "organization", data["organization_id"], {"chat_id": chat_id_value, "inn": data["inn"]})
+        await send_message(chat_id, f"Чат подтверждения заявок сохранен.\nОрганизация: {data['org_name']}\nchat_id: {chat_id_value}", [callback_button("Администрирование", "admin:menu")])
+        return True
+
+    if state == "admin_alert_await_chat_id":
+        chat_id_value = text.strip()
+        if not re.fullmatch(r"-?\d{3,30}", chat_id_value):
+            await send_message(chat_id, "Введите числовой id чата, например -123456789.")
+            return True
+        alert_chat_id = new_id()
+        execute(
+            """
+            insert into sos_org.alert_chats (id, organization_id, chat_id, created_by_user_id)
+            values (%s, %s, %s, %s)
+            on conflict (organization_id, chat_id) do update set is_active = true
+            """,
+            (alert_chat_id, data["organization_id"], chat_id_value, user_id),
+        )
+        clear_state(user_id)
+        audit(user_id, chat_id, "admin_add_alert_chat", "organization", data["organization_id"], {"chat_id": chat_id_value, "inn": data["inn"]})
+        await send_message(chat_id, f"Чат тревог добавлен.\nОрганизация: {data['org_name']}\nchat_id: {chat_id_value}", [callback_button("Администрирование", "admin:menu")])
         return True
 
     return False
@@ -1346,6 +1454,20 @@ async def handle_callback(chat_id: str, user_id: str, payload: str) -> None:
             await send_message(chat_id, "Недостаточно прав.")
             return
         await send_message(chat_id, "Выберите тип организации.", [callback_button("Школа", "admin:add_org_type:school"), callback_button("Медицина", "admin:add_org_type:medical")], columns=2)
+        return
+    if payload == "admin:set_approval_chat":
+        if user_id not in ADMIN_USER_IDS:
+            await send_message(chat_id, "Недостаточно прав.")
+            return
+        set_state(user_id, "admin_approval_await_inn", {})
+        await send_message(chat_id, "Введите ИНН организации, для которой нужно назначить чат подтверждения заявок.")
+        return
+    if payload == "admin:add_alert_chat":
+        if user_id not in ADMIN_USER_IDS:
+            await send_message(chat_id, "Недостаточно прав.")
+            return
+        set_state(user_id, "admin_alert_await_inn", {})
+        await send_message(chat_id, "Введите ИНН организации, для которой нужно добавить чат тревог.")
         return
     if parts[0] == "admin" and parts[1] == "add_org_type" and len(parts) == 3:
         set_state(user_id, "admin_add_org_name", {"org_type": parts[2]})
