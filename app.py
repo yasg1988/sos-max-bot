@@ -525,6 +525,7 @@ def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
     has_child_sos = False
     has_staff_alarm = False
     has_profile = False
+    is_child_only = False
     if user_id:
         has_child_sos = bool(
             fetchone(
@@ -541,6 +542,13 @@ def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
         user = get_user(user_id)
         roles = set((user or {}).get("roles") or [])
         has_profile = bool(roles or has_child_sos or has_staff_alarm)
+        is_child_only = has_child_sos and not (roles & {"admin", "parent", "staff"}) and not has_staff_alarm
+
+    if is_child_only:
+        return [
+            callback_button("Нужна помощь", "child:help"),
+            callback_button("Еще", "child:more"),
+        ]
 
     buttons = [
         callback_button("Я родитель", "parent:menu"),
@@ -573,7 +581,27 @@ def main_menu_text(with_greeting: bool = False) -> str:
 
 
 async def show_main(chat_id: str, user_id: str | None = None, *, with_greeting: bool = False) -> None:
-    await send_message(chat_id, main_menu_text(with_greeting), main_buttons(user_id))
+    user = get_user(user_id) if user_id else None
+    roles = set((user or {}).get("roles") or [])
+    has_child_sos = bool(
+        user_id
+        and fetchone(
+            "select 1 from sos_family.links where child_user_id = %s and status = 'active' limit 1",
+            (user_id,),
+        )
+    )
+    has_staff_alarm = bool(
+        user_id
+        and fetchone(
+            "select 1 from sos_org.staff where user_id = %s and status = 'approved' limit 1",
+            (user_id,),
+        )
+    )
+    if has_child_sos and not (roles & {"admin", "parent", "staff"}) and not has_staff_alarm:
+        text = ("Здравствуйте! Я чат-бот Ошмазик.\n\n" if with_greeting else "") + "Если нужна помощь, нажми кнопку."
+    else:
+        text = main_menu_text(with_greeting)
+    await send_message(chat_id, text, main_buttons(user_id))
 
 
 async def ask_name(chat_id: str, user_id: str, next_state: str, role_label: str) -> None:
@@ -647,6 +675,48 @@ async def child_menu(chat_id: str, user_id: str) -> None:
             callback_button("Главное меню", "main:menu"),
         ],
     )
+
+
+async def child_help_menu(chat_id: str) -> None:
+    await send_message(
+        chat_id,
+        "Что случилось?",
+        [
+            callback_button("Нужна помощь", "child:sos"),
+            callback_button("Я потерялся", "child:lost"),
+            callback_button("Тестовая тревога", "child:test"),
+            callback_button("Назад", "main:menu"),
+        ],
+    )
+
+
+async def child_more_menu(chat_id: str) -> None:
+    await send_message(
+        chat_id,
+        "Дополнительно",
+        [
+            callback_button("Мои родители", "child:parents"),
+            callback_button("Добавить родителя", "child:enter_code"),
+            callback_button("Рекомендации безопасности", "guide:child"),
+            callback_button("Мои данные", "profile:menu"),
+            callback_button("Главное меню", "main:menu"),
+        ],
+    )
+
+
+async def child_parents(chat_id: str, user_id: str) -> None:
+    rows = fetchall(
+        """
+        select u.display_name
+        from sos_family.links l
+        join sos_core.users u on u.user_id = l.parent_user_id
+        where l.child_user_id = %s and l.status = 'active'
+        order by l.created_at desc
+        """,
+        (user_id,),
+    )
+    text = "Мои родители\n\n" + ("\n".join(f"- {row[0] or 'Родитель'}" for row in rows) if rows else "Пока нет привязанных родителей.")
+    await send_message(text=text, chat_id=chat_id, buttons=[callback_button("Назад", "child:more")])
 
 
 async def staff_menu(chat_id: str, user_id: str) -> None:
@@ -1310,6 +1380,15 @@ async def handle_callback(chat_id: str, user_id: str, payload: str) -> None:
         return
     if payload == "child:menu":
         await child_menu(chat_id, user_id)
+        return
+    if payload == "child:help":
+        await child_help_menu(chat_id)
+        return
+    if payload == "child:more":
+        await child_more_menu(chat_id)
+        return
+    if payload == "child:parents":
+        await child_parents(chat_id, user_id)
         return
     if payload == "child:enter_code":
         add_role(user_id, "child")
