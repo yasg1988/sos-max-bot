@@ -717,7 +717,7 @@ async def child_menu(chat_id: str, user_id: str) -> None:
         text,
         [
             callback_button("Ввести код родителя", "child:enter_code"),
-            callback_button("Нужна помощь", "child:sos"),
+            callback_button("Опасность", "child:sos"),
             callback_button("Я потерялся", "child:lost"),
             callback_button("Тестовая тревога", "child:test"),
             callback_button("Главное меню", "main:menu"),
@@ -730,7 +730,7 @@ async def child_help_menu(chat_id: str) -> None:
         chat_id,
         "Что случилось?",
         [
-            callback_button("Нужна помощь", "child:sos"),
+            callback_button("Опасность", "child:sos"),
             callback_button("Я потерялся", "child:lost"),
             callback_button("Тестовая тревога", "child:test"),
             callback_button("Назад", "main:menu"),
@@ -1413,7 +1413,7 @@ async def handle_callback(chat_id: str, user_id: str, payload: str) -> None:
         staff_rows = active_staff(user_id)
         buttons = []
         if fetchone("select 1 from sos_family.links where child_user_id = %s and status = 'active' limit 1", (user_id,)):
-            buttons.extend([callback_button("Нужна помощь", "child:sos"), callback_button("Я потерялся", "child:lost")])
+            buttons.extend([callback_button("Опасность", "child:sos"), callback_button("Я потерялся", "child:lost")])
         if staff_rows:
             buttons.append(callback_button("Тревога организации", "staff:alert_menu"))
         if not buttons:
