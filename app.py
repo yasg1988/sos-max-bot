@@ -1471,7 +1471,13 @@ async def handle_callback(chat_id: str, user_id: str, payload: str) -> None:
         actor = get_user(user_id) or {}
         await send_message(chat_id, "Статус тревоги обновлен.")
         if row and row[1]:
-            await send_message(row[1], f"{actor.get('display_name') or 'Родитель'} принял тревогу." if action != "close" else "Тревога закрыта родителем.")
+            parent_name = actor.get("display_name") or "Родитель"
+            child_text = "Тревога закрыта родителем."
+            if action == "accept":
+                child_text = f"{parent_name} принял тревогу."
+            elif action == "coming":
+                child_text = f"Родитель {parent_name} едет."
+            await send_message(row[1], child_text)
         return
     if payload == "staff:menu":
         await staff_menu(chat_id, user_id)
