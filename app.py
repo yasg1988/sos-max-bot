@@ -511,10 +511,53 @@ def extract_text(update: dict[str, Any]) -> str:
     if isinstance(body, dict):
         if isinstance(body.get("text"), str):
             return body["text"].strip()
-        contact = body.get("contact")
-        if isinstance(contact, dict) and contact.get("phone"):
-            return str(contact["phone"]).strip()
+    phone = extract_phone(update)
+    if phone:
+        return phone
     return ""
+
+
+def extract_phone(update: dict[str, Any]) -> str:
+    def phone_from_vcard(vcard: str) -> str:
+        for line in vcard.splitlines():
+            if line.upper().startswith("TEL"):
+                value = line.split(":", 1)[-1].strip()
+                if value:
+                    return value
+        return ""
+
+    def walk(value: Any) -> str:
+        if isinstance(value, dict):
+            contact = value.get("contact")
+            if isinstance(contact, dict):
+                for key in ("phone", "phone_number", "vcf_phone"):
+                    if contact.get(key):
+                        return str(contact[key]).strip()
+                if isinstance(contact.get("vcf_info"), str):
+                    phone = phone_from_vcard(contact["vcf_info"])
+                    if phone:
+                        return phone
+            if value.get("type") == "contact":
+                payload = value.get("payload") if isinstance(value.get("payload"), dict) else value
+                for key in ("phone", "phone_number", "vcf_phone"):
+                    if payload.get(key):
+                        return str(payload[key]).strip()
+                if isinstance(payload.get("vcf_info"), str):
+                    phone = phone_from_vcard(payload["vcf_info"])
+                    if phone:
+                        return phone
+            for nested in value.values():
+                phone = walk(nested)
+                if phone:
+                    return phone
+        elif isinstance(value, list):
+            for item in value:
+                phone = walk(item)
+                if phone:
+                    return phone
+        return ""
+
+    return walk(update)
 
 
 def extract_callback_payload(update: dict[str, Any]) -> str:
@@ -1517,7 +1560,7 @@ async def handle_text_state(chat_id: str, user_id: str, text: str, update: dict[
 
     if state == "staff_await_phone":
         if not PHONE_RE.match(text):
-            await send_message(chat_id, "Введите корректный номер телефона.")
+            await send_message(chat_id, "Введите корректный номер телефона.", [contact_button()])
             return True
         data["phone"] = text
         set_state(user_id, "staff_await_position", data)
