@@ -858,7 +858,6 @@ async def send_family_alert(chat_id: str, user_id: str, location: tuple[float, f
         (user_id,),
     )
     label = "SOS" if alert_type == "sos" else "Ребенок потерялся" if alert_type == "lost" else "Тестовая тревога"
-    map_text = f"https://maps.google.com/?q={lat},{lon}"
     for parent_user_id, parent_chat_id, _parent_name in parents:
         execute(
             "insert into sos_family.alert_recipients (alert_id, parent_user_id, sent_at) values (%s, %s, now()) on conflict do nothing",
@@ -867,7 +866,7 @@ async def send_family_alert(chat_id: str, user_id: str, location: tuple[float, f
         target = parent_chat_id or parent_user_id
         await send_message(
             target,
-            f"{label}\n\nРебенок: {child_name}\nГеолокация: {lat:.6f}, {lon:.6f}\nКарта: {map_text}",
+            f"{label}\n\nРебенок: {child_name}\nГеолокация: {lat:.6f}, {lon:.6f}",
             [
                 callback_button("Принял", f"famalert:accept:{alert_id}"),
                 callback_button("Еду", f"famalert:coming:{alert_id}"),
@@ -1394,6 +1393,11 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="SOS MAX Bot", lifespan=lifespan)
 
 
+@app.get("/")
+async def root() -> dict[str, Any]:
+    return {"status": "ok", "service": "sos-max-bot"}
+
+
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {
@@ -1414,4 +1418,3 @@ async def webhook_max(request: Request) -> Response:
     except Exception:
         logger.exception("Failed to process MAX update")
     return Response(status_code=200)
-
