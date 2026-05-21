@@ -770,8 +770,10 @@ async def parent_menu(chat_id: str, user_id: str) -> None:
         (user_id,),
     )
     children = "\n".join(f"- {name or 'Ребенок'}: {status}" for name, status in rows) or "Пока нет привязанных детей."
+    has_active_child = any(status == "active" for _name, status in rows)
     buttons = [callback_button("Добавить ребенка", "parent:create_code")]
-    if rows:
+    if has_active_child:
+        buttons.append(callback_button("Где мой ребенок?", "parent:locate"))
         buttons.append(callback_button("Управление детьми", "parent:children"))
     buttons.append(callback_button("Главное меню", "main:menu"))
     await send_message(
@@ -798,6 +800,25 @@ async def parent_children_menu(chat_id: str, user_id: str) -> None:
     buttons = [callback_button(f"Отключить: {name or 'Ребенок'}", f"parentchild:remove:{link_id}") for link_id, name, _status in rows]
     buttons.append(callback_button("Назад", "parent:menu"))
     await send_message(chat_id, "Выберите связь, которую нужно отключить.", buttons)
+
+
+async def parent_locate_menu(chat_id: str, user_id: str) -> None:
+    rows = fetchall(
+        """
+        select u.user_id, u.display_name, u.chat_id
+        from sos_family.links l
+        join sos_core.users u on u.user_id = l.child_user_id
+        where l.parent_user_id = %s and l.status = 'active'
+        order by u.display_name nulls last, l.created_at desc
+        """,
+        (user_id,),
+    )
+    if not rows:
+        await send_message(chat_id, "Активных связей с детьми пока нет.", [callback_button("Назад", "parent:menu")])
+        return
+    buttons = [callback_button(name or "Ребенок", f"parentloc:req:{child_user_id}") for child_user_id, name, _child_chat_id in rows]
+    buttons.append(callback_button("Назад", "parent:menu"))
+    await send_message(chat_id, "У какого ребенка запросить геолокацию?", buttons)
 
 
 async def child_menu(chat_id: str, user_id: str) -> None:
@@ -1178,6 +1199,27 @@ async def send_family_alert(chat_id: str, user_id: str, location: tuple[float, f
     audit(user_id, chat_id, "family_alert_sent", "family_alert", alert_id, {"alert_type": alert_type})
 
 
+async def send_parent_location_response(
+    chat_id: str,
+    user_id: str,
+    location: tuple[float, float, dict[str, Any]],
+    data: dict[str, Any],
+) -> None:
+    lat, lon, _payload = location
+    child = get_user(user_id) or {}
+    child_name = child.get("display_name") or "Ребенок"
+    parent_chat_id = data.get("parent_chat_id") or data.get("parent_user_id")
+    if parent_chat_id:
+        await send_message_rows(
+            parent_chat_id,
+            f"Геолокация ребенка\n\nРебенок: {child_name}\nГеолокация: {lat:.6f}, {lon:.6f}",
+            map_buttons(lat, lon),
+        )
+    await send_message(chat_id, "Геолокация отправлена родителю.", [callback_button("Главное меню", "main:menu")])
+    clear_state(user_id)
+    audit(user_id, chat_id, "child_location_sent_to_parent", "family_link", None, {"parent_user_id": data.get("parent_user_id")})
+
+
 async def guide_menu(chat_id: str, user_id: str) -> None:
     user = get_user(user_id) or {}
     roles = set(user.get("roles") or [])
@@ -1440,6 +1482,14 @@ async def handle_text_state(chat_id: str, user_id: str, text: str, update: dict[
         await send_family_alert(chat_id, user_id, location, data.get("alert_type", "sos"))
         return True
 
+    if state == "child_await_parent_location":
+        location = extract_location(update)
+        if not location:
+            await send_message(chat_id, "Не вижу геолокацию. Нажмите кнопку «Отправить геолокацию».", [geo_button()])
+            return True
+        await send_parent_location_response(chat_id, user_id, location, data)
+        return True
+
     if state == "staff_await_inn":
         staff_type = data["staff_type"]
         inn = clean_inn(text)
@@ -1601,11 +1651,62 @@ async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id:
     if payload == "parent:children":
         await parent_children_menu(chat_id, user_id)
         return
+    if payload == "parent:locate":
+        await parent_locate_menu(chat_id, user_id)
+        return
     if payload == "parent:create_code":
         add_role(user_id, "parent")
         code = await asyncio.to_thread(create_parent_code, user_id)
         await send_message(chat_id, f"Одноразовый код для ребенка: {code}\n\nКод действует {FAMILY_CODE_TTL_MINUTES} минут. Ребенок должен открыть раздел «Я ребенок» и ввести этот код.")
         return
+    if parts[0] == "parentloc" and len(parts) == 3:
+        action, child_user_id = parts[1], parts[2]
+        if action == "req":
+            row = fetchone(
+                """
+                select u.user_id, u.display_name, u.chat_id
+                from sos_family.links l
+                join sos_core.users u on u.user_id = l.child_user_id
+                where l.parent_user_id = %s and l.child_user_id = %s and l.status = 'active'
+                """,
+                (user_id, child_user_id),
+            )
+            if not row:
+                await send_message(chat_id, "Активная связь с ребенком не найдена.", [callback_button("Раздел родителя", "parent:menu")])
+                return
+            _child_user_id, child_name, child_chat_id = row
+            if not child_chat_id:
+                await send_message(chat_id, "Не могу отправить запрос: у ребенка пока нет актуального чата с ботом.", [callback_button("Раздел родителя", "parent:menu")])
+                return
+            parent = get_user(user_id) or {}
+            set_state(
+                child_user_id,
+                "child_await_parent_location",
+                {
+                    "parent_user_id": user_id,
+                    "parent_chat_id": chat_id,
+                    "parent_name": parent.get("display_name") or "Родитель",
+                },
+            )
+            await send_message(
+                child_chat_id,
+                f"Родитель {parent.get('display_name') or 'Родитель'} просит отправить геолокацию.",
+                [geo_button(), callback_button("Отказаться", "childloc:decline")],
+            )
+            await send_message(chat_id, f"Запрос геолокации отправлен ребенку {child_name or 'Ребенок'}.", [callback_button("Главное меню", "main:menu")])
+            audit(user_id, chat_id, "parent_location_requested", "child", child_user_id)
+            return
+    if parts[0] == "childloc" and len(parts) == 2:
+        if parts[1] == "decline":
+            state_item = get_state(user_id)
+            data = state_item[1] if state_item and state_item[0] == "child_await_parent_location" else {}
+            parent_chat_id = data.get("parent_chat_id")
+            child = get_user(user_id) or {}
+            clear_state(user_id)
+            await send_message(chat_id, "Запрос геолокации отклонен.", [callback_button("Главное меню", "main:menu")])
+            if parent_chat_id:
+                await send_message(parent_chat_id, f"Ребенок {child.get('display_name') or 'Ребенок'} отказался отправить геолокацию.", [callback_button("Главное меню", "main:menu")])
+            return
     if parts[0] == "parentchild" and len(parts) == 3:
         action, link_id = parts[1], parts[2]
         row = fetchone(
@@ -1908,7 +2009,7 @@ async def process_update(update: dict[str, Any]) -> None:
         return
     text = extract_text(update)
     state = get_state(user_id)
-    if state and state[0] == "child_await_location":
+    if state and state[0] in {"child_await_location", "child_await_parent_location"}:
         if await handle_text_state(chat_id, user_id, text, update):
             return
     normalized_text = text.lower()
