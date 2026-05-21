@@ -1330,9 +1330,44 @@ async def profile_menu(chat_id: str, user_id: str) -> None:
     user = get_user(user_id) or {}
     roles = ", ".join(role for role in (user.get("roles") or []) if role in {"child", "parent"}) or "не выбраны"
     family = fetchone("select count(*) from sos_family.links where (parent_user_id = %s or child_user_id = %s) and status = 'active'", (user_id, user_id))[0]
+    children = fetchall(
+        """
+        select u.display_name
+        from sos_family.links l
+        join sos_core.users u on u.user_id = l.child_user_id
+        where l.parent_user_id = %s and l.status = 'active'
+        order by u.display_name nulls last, l.created_at desc
+        """,
+        (user_id,),
+    )
+    parents = fetchall(
+        """
+        select u.display_name
+        from sos_family.links l
+        join sos_core.users u on u.user_id = l.parent_user_id
+        where l.child_user_id = %s and l.status = 'active'
+        order by u.display_name nulls last, l.created_at desc
+        """,
+        (user_id,),
+    )
+    lines = [
+        "Мои данные",
+        "",
+        f"Имя: {user.get('display_name') or '-'}",
+        f"Роли: {roles}",
+        f"Семейные связи: {family}",
+    ]
+    if children:
+        lines.append("")
+        lines.append("Дети:")
+        lines.extend(f"- {name or 'Ребенок'}" for (name,) in children)
+    if parents:
+        lines.append("")
+        lines.append("Родители:")
+        lines.extend(f"- {name or 'Родитель'}" for (name,) in parents)
     await send_message(
         chat_id,
-        f"Мои данные\n\nИмя: {user.get('display_name') or '-'}\nРоли: {roles}\nСемейные связи: {family}",
+        "\n".join(lines),
         [callback_button("Изменить имя", "profile:name"), callback_button("Главное меню", "main:menu")],
     )
 
