@@ -1282,6 +1282,7 @@ async def admin_menu(chat_id: str, user_id: str) -> None:
             callback_button("Добавить организацию", "admin:add_org"),
             callback_button("Чат заявок", "admin:set_approval_chat"),
             callback_button("Чат тревог", "admin:add_alert_chat"),
+            callback_button("Отключить сотрудника", "admin:disable_staff"),
             callback_button("Список организаций", "admin:orgs"),
             callback_button("Главное меню", "main:menu"),
         ],
@@ -1309,6 +1310,37 @@ async def list_orgs(chat_id: str) -> None:
         total_alert_chats = int(alert_count or 0) + (1 if legacy_alert else 0)
         lines.append(f"- {name} ({org_type}), ИНН {inn}, {status}, заявки: {'+' if approval else '-'}, чатов тревог: {total_alert_chats}")
     await send_message(chat_id, "\n".join(lines), [callback_button("Главное меню", "main:menu")])
+
+
+async def admin_staff_list(chat_id: str, org_id: str, org_name: str, inn: str) -> None:
+    rows = fetchall(
+        """
+        select s.id, s.full_name, s.phone, s.position, u.user_id
+        from sos_org.staff s
+        join sos_core.users u on u.user_id = s.user_id
+        where s.organization_id = %s and s.status = 'approved'
+        order by s.full_name
+        limit 50
+        """,
+        (org_id,),
+    )
+    if not rows:
+        await send_message(
+            chat_id,
+            f"В организации нет активных сотрудников.\n{org_name}\nИНН: {inn}",
+            [callback_button("Администрирование", "admin:menu")],
+        )
+        return
+    buttons = [
+        callback_button(f"{full_name} · {phone}", f"adminstaff:disable:{staff_id}")
+        for staff_id, full_name, phone, _position, _staff_user_id in rows
+    ]
+    buttons.append(callback_button("Администрирование", "admin:menu"))
+    await send_message(
+        chat_id,
+        f"Активные сотрудники\n{org_name}\nИНН: {inn}\n\nВыберите сотрудника для отключения.",
+        buttons,
+    )
 
 
 async def bind_chat(chat_id: str, user_id: str, text: str, bind_type: str) -> None:
@@ -1495,7 +1527,7 @@ async def handle_text_state(chat_id: str, user_id: str, text: str, update: dict[
         )
         return True
 
-    if state in {"admin_approval_await_inn", "admin_alert_await_inn"}:
+    if state in {"admin_approval_await_inn", "admin_alert_await_inn", "admin_staff_disable_await_inn"}:
         inn = clean_inn(text)
         if not INN_RE.match(inn):
             await send_message(chat_id, "ИНН должен содержать 10 или 12 цифр.")
@@ -1503,6 +1535,10 @@ async def handle_text_state(chat_id: str, user_id: str, text: str, update: dict[
         org = find_org_by_inn(inn)
         if not org:
             await send_message(chat_id, "Организация с таким ИНН не найдена.")
+            return True
+        if state == "admin_staff_disable_await_inn":
+            clear_state(user_id)
+            await admin_staff_list(chat_id, org["id"], org["name"], inn)
             return True
         next_state = "admin_approval_await_chat_id" if state == "admin_approval_await_inn" else "admin_alert_await_chat_id"
         set_state(user_id, next_state, {"organization_id": org["id"], "org_name": org["name"], "inn": inn})
@@ -1795,6 +1831,60 @@ async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id:
         set_state(user_id, "admin_alert_await_inn", {})
         await send_message(chat_id, "Введите ИНН организации, для которой нужно добавить чат тревог.")
         return
+    if payload == "admin:disable_staff":
+        if user_id not in ADMIN_USER_IDS:
+            await send_message(chat_id, "Недостаточно прав.")
+            return
+        set_state(user_id, "admin_staff_disable_await_inn", {})
+        await send_message(chat_id, "Введите ИНН организации, в которой нужно отключить сотрудника.")
+        return
+    if parts[0] == "adminstaff" and len(parts) == 3:
+        if user_id not in ADMIN_USER_IDS:
+            await send_message(chat_id, "Недостаточно прав.")
+            return
+        action, staff_id = parts[1], parts[2]
+        row = fetchone(
+            """
+            select s.id, s.user_id, s.full_name, s.phone, s.position, o.name, o.inn, u.chat_id
+            from sos_org.staff s
+            join sos_org.organizations o on o.id = s.organization_id
+            join sos_core.users u on u.user_id = s.user_id
+            where s.id = %s and s.status = 'approved'
+            """,
+            (staff_id,),
+        )
+        if not row:
+            await send_message(chat_id, "Активный сотрудник не найден.", [callback_button("Администрирование", "admin:menu")])
+            return
+        _staff_id, staff_user_id, full_name, phone, position, org_name, inn, staff_chat_id = row
+        if action == "disable":
+            await send_message(
+                chat_id,
+                f"Отключить сотрудника?\n\nОрганизация: {org_name}\nИНН: {inn}\nФИО: {full_name}\nТелефон: {phone}\nДолжность: {position or '-'}",
+                [
+                    callback_button("Да, отключить", f"adminstaff:confirm_disable:{staff_id}"),
+                    callback_button("Администрирование", "admin:menu"),
+                ],
+            )
+            return
+        if action == "confirm_disable":
+            execute(
+                """
+                update sos_org.staff
+                set status = 'blocked', blocked_at = now(), decided_by_user_id = %s, decided_at = now()
+                where id = %s and status = 'approved'
+                """,
+                (user_id, staff_id),
+            )
+            await send_message(
+                chat_id,
+                f"Сотрудник отключен.\n\nОрганизация: {org_name}\nФИО: {full_name}",
+                [callback_button("Отключить еще", "admin:disable_staff"), callback_button("Главное меню", "main:menu")],
+            )
+            if staff_chat_id:
+                await send_message(staff_chat_id, f"Доступ сотрудника отключен.\nОрганизация: {org_name}", [callback_button("Главное меню", "main:menu")])
+            audit(user_id, chat_id, "staff_disabled", "staff", staff_id, {"staff_user_id": staff_user_id, "inn": inn})
+            return
     if parts[0] == "admin" and parts[1] == "add_org_type" and len(parts) == 3:
         set_state(user_id, "admin_add_org_name", {"org_type": parts[2]})
         await send_message(chat_id, "Введите название учреждения.")
