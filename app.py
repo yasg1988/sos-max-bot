@@ -966,16 +966,22 @@ async def staff_menu(chat_id: str, user_id: str) -> None:
             lines.append(f"- {org_name} ({org_type}): {status}")
     else:
         lines.append("\nВы пока не привязаны к учреждению.")
+    buttons = [
+        callback_button("Регистрация в школе", "staff:start:school"),
+        callback_button("Регистрация в медорганизации", "staff:start:medical"),
+    ]
+    if any(status == "approved" for _staff_id, _org_name, _org_type, status in rows):
+        buttons.extend(
+            [
+                callback_button("Тревожная кнопка", "staff:alert_menu"),
+                callback_button("Тестовая тревога", "staff:test_menu"),
+            ]
+        )
+    buttons.append(callback_button("Главное меню", "main:menu"))
     await send_message(
         chat_id,
         "\n".join(lines),
-        [
-            callback_button("Регистрация в школе", "staff:start:school"),
-            callback_button("Регистрация в медорганизации", "staff:start:medical"),
-            callback_button("Тревожная кнопка", "staff:alert_menu"),
-            callback_button("Тестовая тревога", "staff:test_menu"),
-            callback_button("Главное меню", "main:menu"),
-        ],
+        buttons,
     )
 
 
