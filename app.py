@@ -745,7 +745,6 @@ def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
     buttons = [
         callback_button("Я родитель", "parent:menu"),
         callback_button("Я ребенок", "child:menu"),
-        callback_button("Помощь", "help:menu"),
         callback_button("Рекомендации безопасности", "guide:menu"),
     ]
     alert_buttons: list[dict[str, Any]] = []
@@ -753,6 +752,7 @@ def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
         alert_buttons.append(callback_button("Нужна помощь", "child:sos"))
     if has_profile:
         buttons.append(callback_button("Мои данные / связи", "profile:menu"))
+    buttons.append(callback_button("Помощь", "help:menu"))
     buttons = alert_buttons + buttons
     return buttons
 
