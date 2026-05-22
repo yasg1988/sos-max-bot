@@ -753,6 +753,7 @@ def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
     if has_profile:
         buttons.append(callback_button("Мои данные / связи", "profile:menu"))
     buttons.append(callback_button("Помощь", "help:menu"))
+    buttons.append(callback_button("О проекте", "about:project"))
     buttons = alert_buttons + buttons
     return buttons
 
@@ -1832,6 +1833,13 @@ async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id:
         return
     if payload == "help:child":
         await send_help_with_image(chat_id, "child", child_help_text())
+        return
+    if payload == "about:project":
+        await send_message(
+            chat_id,
+            'Чат-бот разработан по инициативе Молодежного парламента Республики Марий Эл, при поддержке Государственного Собрания Республики Марий Эл, Партийного проекта "Цифровая Россия"',
+            [callback_button("Главное меню", "main:menu")],
+        )
         return
     if payload == "parent:menu":
         await parent_menu(chat_id, user_id)
