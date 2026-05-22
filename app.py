@@ -54,6 +54,11 @@ RECOMMENDATION_IMAGES = {
     "parent": BASE_DIR / "assets" / "parent_recommendations.png",
 }
 RECOMMENDATION_IMAGE_PAYLOADS: dict[str, dict[str, Any]] = {}
+HELP_IMAGES = {
+    "child": BASE_DIR / "assets" / "help_children.png",
+    "parent": BASE_DIR / "assets" / "help_parents.png",
+}
+HELP_IMAGE_PAYLOADS: dict[str, dict[str, Any]] = {}
 
 NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЁё0-9 .,'\"()\\-]{2,120}$")
 INN_RE = re.compile(r"^\d{10}(\d{2})?$")
@@ -157,6 +162,20 @@ async def recommendation_image_attachment(kind: str) -> dict[str, Any] | None:
         if payload:
             RECOMMENDATION_IMAGE_PAYLOADS[kind] = payload
     payload = RECOMMENDATION_IMAGE_PAYLOADS.get(kind)
+    if not payload:
+        return None
+    return {"type": "image", "payload": payload}
+
+
+async def help_image_attachment(kind: str) -> dict[str, Any] | None:
+    path = HELP_IMAGES.get(kind)
+    if path is None:
+        return None
+    if kind not in HELP_IMAGE_PAYLOADS:
+        payload = await upload_image(path)
+        if payload:
+            HELP_IMAGE_PAYLOADS[kind] = payload
+    payload = HELP_IMAGE_PAYLOADS.get(kind)
     if not payload:
         return None
     return {"type": "image", "payload": payload}
@@ -726,6 +745,7 @@ def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
     buttons = [
         callback_button("Я родитель", "parent:menu"),
         callback_button("Я ребенок", "child:menu"),
+        callback_button("Помощь", "help:menu"),
         callback_button("Рекомендации безопасности", "guide:menu"),
     ]
     alert_buttons: list[dict[str, Any]] = []
@@ -1293,6 +1313,93 @@ async def send_guide_with_image(chat_id: str, kind: str, text: str) -> None:
     await send_message(chat_id, text, buttons)
 
 
+async def help_menu(chat_id: str) -> None:
+    await send_message(
+        chat_id,
+        "Для кого показать помощь?",
+        [
+            callback_button("Я родитель", "help:parent"),
+            callback_button("Я ребенок", "help:child"),
+            callback_button("Главное меню", "main:menu"),
+        ],
+    )
+
+
+async def send_help_with_image(chat_id: str, kind: str, text: str) -> None:
+    buttons = [callback_button("Главное меню", "main:menu")]
+    with contextlib.suppress(Exception):
+        image = await help_image_attachment(kind)
+        if image:
+            try:
+                await send_message_with_attachments(chat_id, text, [image], buttons)
+                return
+            except httpx.HTTPStatusError as exc:
+                if "attachment.not.ready" not in exc.response.text:
+                    raise
+                await asyncio.sleep(2)
+                await send_message_with_attachments(chat_id, text, [image], buttons)
+                return
+    logger.warning("Sending %s help without image", kind)
+    await send_message(chat_id, text, buttons)
+
+
+def parent_help_text() -> str:
+    return (
+        "Помощь для родителя\n\n"
+        "Этот бот помогает быстро получить сигнал от ребенка, если ему нужна помощь или если он потерялся.\n\n"
+        "Что можно делать:\n\n"
+        "1. Подключить ребенка\n"
+        "Вы создаете одноразовый код, ребенок вводит его у себя в боте, после этого вы подтверждаете связь.\n\n"
+        "2. Получать тревогу от ребенка\n"
+        "Если ребенок нажмет кнопку помощи и отправит геолокацию, вам придет сообщение с координатами и кнопками для открытия места в картах.\n\n"
+        "3. Открыть геолокацию в картах\n"
+        "В сообщении будут кнопки: Google Map, Яндекс карты, Яндекс навигатор, 2Gis.\n\n"
+        "4. Сообщить ребенку, что вы реагируете\n"
+        "Под тревогой есть кнопки: Принял, Еду, Закрыть. Если нажать «Еду», ребенок получит сообщение, что родитель едет.\n\n"
+        "5. Запросить геолокацию ребенка\n"
+        "В разделе родителя можно нажать «Где мой ребенок?». Ребенку придет запрос отправить геолокацию. Геолокация отправляется только после действия ребенка.\n\n"
+        "6. Отключить связь с ребенком\n"
+        "Если связь больше не нужна, ее можно отключить в разделе управления детьми.\n\n"
+        "Как подключить ребенка:\n\n"
+        "1. Нажмите «Я родитель».\n"
+        "2. Введите свое имя, если бот попросит.\n"
+        "3. Нажмите «Добавить ребенка».\n"
+        "4. Бот покажет одноразовый код.\n"
+        "5. Передайте этот код ребенку.\n"
+        "6. Ребенок должен открыть бот, нажать «Я ребенок» и ввести код.\n"
+        "7. Когда вам придет запрос на связь, нажмите «Подтвердить».\n\n"
+        "После этого ребенок будет подключен, а вы сможете получать тревоги и запрашивать геолокацию."
+    )
+
+
+def child_help_text() -> str:
+    return (
+        "Помощь для ребенка\n\n"
+        "Этот бот нужен, чтобы быстро сообщить родителям, если тебе нужна помощь или если ты потерялся.\n\n"
+        "Что можно делать:\n\n"
+        "1. Подключиться к родителю\n"
+        "Родитель дает тебе одноразовый код. Ты вводишь его в боте, и родитель подтверждает связь.\n\n"
+        "2. Быстро попросить помощь\n"
+        "После подключения в главном меню будет кнопка «Нужна помощь».\n\n"
+        "3. Отправить тревогу родителям\n"
+        "Можно выбрать «Опасность» или «Я потерялся». После этого бот попросит отправить геолокацию. Родители получат сообщение и смогут открыть место на карте.\n\n"
+        "4. Отправить тестовую тревогу\n"
+        "Кнопка «Тестовая тревога» нужна, чтобы вместе с родителями проверить, как все работает.\n\n"
+        "5. Ответить на запрос родителя\n"
+        "Если родитель нажмет «Где мой ребенок?», тебе придет просьба отправить геолокацию. Ты можешь отправить ее или отказаться.\n\n"
+        "Как подключиться к родителю:\n\n"
+        "1. Попроси родителя открыть бот и нажать «Я родитель».\n"
+        "2. Родитель нажмет «Добавить ребенка» и получит код.\n"
+        "3. Открой бот у себя.\n"
+        "4. Нажми «Я ребенок».\n"
+        "5. Введи свое имя, если бот попросит.\n"
+        "6. Нажми «Ввести код родителя».\n"
+        "7. Введи код, который дал родитель.\n"
+        "8. Дождись, пока родитель подтвердит связь.\n\n"
+        "После подтверждения в боте появится кнопка «Нужна помощь». Если что-то случилось, нажми ее и отправь геолокацию."
+    )
+
+
 def child_guide() -> str:
     return (
         "Рекомендации для ребенка\n\n"
@@ -1716,6 +1823,15 @@ async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id:
         if not buttons:
             buttons = [callback_button("Я ребенок", "child:menu")]
         await send_message(chat_id, "Выберите тревожный сценарий.", buttons + [callback_button("Главное меню", "main:menu")])
+        return
+    if payload == "help:menu":
+        await help_menu(chat_id)
+        return
+    if payload == "help:parent":
+        await send_help_with_image(chat_id, "parent", parent_help_text())
+        return
+    if payload == "help:child":
+        await send_help_with_image(chat_id, "child", child_help_text())
         return
     if payload == "parent:menu":
         await parent_menu(chat_id, user_id)
