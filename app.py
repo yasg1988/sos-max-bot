@@ -759,7 +759,7 @@ def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
 
 
 def main_menu_text(with_greeting: bool = False) -> str:
-    prefix = "Здравствуйте! Я чат-бот Ошмазик.\n\n" if with_greeting else ""
+    prefix = "Здравствуйте! Я чат-бот Оралтыш.\n\n" if with_greeting else ""
     return (
         prefix
         + "Если ребенку нужна помощь, родители получат сигнал и геолокацию.\n"
@@ -779,7 +779,7 @@ async def show_main(chat_id: str, user_id: str | None = None, *, with_greeting: 
         )
     )
     if has_child_sos and "parent" not in roles:
-        text = ("Здравствуйте! Я чат-бот Ошмазик.\n\n" if with_greeting else "") + "Если нужна помощь, нажми кнопку."
+        text = ("Здравствуйте! Я чат-бот Оралтыш.\n\n" if with_greeting else "") + "Если нужна помощь, нажми кнопку."
     else:
         text = main_menu_text(with_greeting)
     await send_message(chat_id, text, main_buttons(user_id))
