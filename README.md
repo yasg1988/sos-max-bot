@@ -3,9 +3,11 @@
 ![Аралтыш - цифровой оберег семьи](assets/readme-cover.png)
 
 [![Docker image](https://github.com/yasg1988/sos-max-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/yasg1988/sos-max-bot/actions/workflows/docker-publish.yml)
-[![npm version](https://img.shields.io/npm/v/araltysh?color=cb0000&label=npm)](https://www.npmjs.com/package/araltysh)
+[![npm version](https://img.shields.io/npm/v/araltysh?color=2ea44f&label=npm)](https://www.npmjs.com/package/araltysh)
 [![GitHub tag](https://img.shields.io/github/v/tag/yasg1988/sos-max-bot?label=github%20tag)](https://github.com/yasg1988/sos-max-bot/tags)
 [![GHCR image](https://img.shields.io/badge/GHCR-sos--max--bot-0969da?logo=github)](https://github.com/yasg1988/sos-max-bot/pkgs/container/sos-max-bot)
+[![Docker Hub](https://img.shields.io/docker/v/lmserg/araltysh?label=docker%20hub&logo=docker)](https://hub.docker.com/r/lmserg/araltysh)
+[![Docker pulls](https://img.shields.io/docker/pulls/lmserg/araltysh?label=docker%20pulls&logo=docker)](https://hub.docker.com/r/lmserg/araltysh)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-webhook-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 
