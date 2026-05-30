@@ -13,6 +13,7 @@ This repository is the Araltysh / `sos-max-bot` project. It is not the school pr
 
 - Local repo: `D:\Тревожная кнопка\sos-max-bot`
 - GitHub repo: `https://github.com/yasg1988/sos-max-bot`
+- GitVerse mirror: `https://gitverse.ru/yasg1988/araltysh`
 - Public package: `araltysh`
 - Production domain: `https://sos.yasg.ru`
 - Health URL: `https://sos.yasg.ru/health`
@@ -33,8 +34,9 @@ This repository is the Araltysh / `sos-max-bot` project. It is not the school pr
 6. Commit to `main`, tag `vX.Y.Z`, push branch and tag.
 7. Publish npm package only through a temporary npm config or an environment secret. Do not save token files in the repo.
 8. Wait for GitHub Actions Docker publish workflow to succeed.
-9. Deploy the new GHCR image to the Araltysh service on `185.23.34.142`.
-10. Verify `https://sos.yasg.ru/health`.
-11. Create a GitHub Release for the tag.
+9. Check GitVerse mirror workflow. It uses GitHub Secret `GITVERSE_TOKEN`; if the secret is absent, the workflow skips without failing.
+10. Deploy the new GHCR image to the Araltysh service on `185.23.34.142`.
+11. Verify `https://sos.yasg.ru/health`.
+12. Create a GitHub Release for the tag.
 
 See `DEPLOYMENT_RUNBOOK.md` for exact commands.

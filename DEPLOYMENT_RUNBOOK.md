@@ -8,6 +8,7 @@ Araltysh:
 
 - Local folder: `D:\Тревожная кнопка\sos-max-bot`
 - GitHub: `yasg1988/sos-max-bot`
+- GitVerse mirror: `https://gitverse.ru/yasg1988/araltysh`
 - Domain: `https://sos.yasg.ru`
 - VPS: `185.23.34.142`
 - SSH key: `%USERPROFILE%\.ssh\claude_dokploy_key`
@@ -27,6 +28,7 @@ Secrets and credentials are expected to live outside the repository:
 
 - MAX bot token and database settings: Dokploy/service environment variables.
 - Docker Hub credentials: GitHub repository secrets.
+- GitVerse mirror token: GitHub repository secret `GITVERSE_TOKEN`.
 - npm token: user-provided token or local npm auth, used only through temporary config.
 - SSH deploy key: `%USERPROFILE%\.ssh\claude_dokploy_key`.
 
@@ -112,6 +114,30 @@ Check Docker Hub tag:
 
 ```powershell
 Invoke-RestMethod -Uri "https://hub.docker.com/v2/repositories/lmserg/araltysh/tags/X.Y.Z" | ConvertTo-Json -Depth 3
+```
+
+## GitVerse Mirror
+
+GitVerse repository:
+
+```text
+https://gitverse.ru/yasg1988/araltysh
+```
+
+The GitHub workflow `.github/workflows/gitverse-mirror.yml` mirrors branches and tags to GitVerse on push.
+
+Required GitHub secret:
+
+```text
+GITVERSE_TOKEN
+```
+
+If `GITVERSE_TOKEN` is absent, the workflow skips mirroring without failing.
+
+Verify mirror state:
+
+```powershell
+git ls-remote https://gitverse.ru/yasg1988/araltysh.git HEAD refs/heads/main refs/tags/vX.Y.Z
 ```
 
 ## Production Deploy
