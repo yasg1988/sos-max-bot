@@ -738,7 +738,8 @@ def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
 
     if is_child_only:
         return [
-            callback_button("Нужна помощь", "child:help"),
+            callback_button("Опасность", "child:sos"),
+            callback_button("Я потерялся", "child:lost"),
             callback_button("Еще", "child:more"),
         ]
 
@@ -749,7 +750,7 @@ def main_buttons(user_id: str | None = None) -> list[dict[str, Any]]:
     ]
     alert_buttons: list[dict[str, Any]] = []
     if has_child_sos:
-        alert_buttons.append(callback_button("Нужна помощь", "child:sos"))
+        alert_buttons.extend([callback_button("Опасность", "child:sos"), callback_button("Я потерялся", "child:lost")])
     if has_profile:
         buttons.append(callback_button("Мои данные / связи", "profile:menu"))
     buttons.append(callback_button("Помощь", "help:menu"))
@@ -903,7 +904,6 @@ async def child_menu(chat_id: str, user_id: str) -> None:
             callback_button("Ввести код родителя", "child:enter_code"),
             callback_button("Опасность", "child:sos"),
             callback_button("Я потерялся", "child:lost"),
-            callback_button("Тестовая тревога", "child:test"),
             callback_button("Главное меню", "main:menu"),
         ],
     )
@@ -916,7 +916,6 @@ async def child_help_menu(chat_id: str) -> None:
         [
             callback_button("Опасность", "child:sos"),
             callback_button("Я потерялся", "child:lost"),
-            callback_button("Тестовая тревога", "child:test"),
             callback_button("Назад", "main:menu"),
         ],
     )
@@ -1228,7 +1227,7 @@ async def send_family_alert(chat_id: str, user_id: str, location: tuple[float, f
         """,
         (user_id,),
     )
-    label = "Нужна помощь" if alert_type == "sos" else "Ребенок потерялся" if alert_type == "lost" else "Тестовая тревога"
+    label = "Опасность" if alert_type == "sos" else "Ребенок потерялся" if alert_type == "lost" else "Тестовая тревога"
     for parent_user_id, parent_chat_id, _parent_name in parents:
         execute(
             "insert into sos_family.alert_recipients (alert_id, parent_user_id, sent_at) values (%s, %s, now()) on conflict do nothing",
@@ -1352,7 +1351,7 @@ def parent_help_text() -> str:
         "1. Подключить ребенка\n"
         "Вы создаете одноразовый код, ребенок вводит его у себя в боте, после этого вы подтверждаете связь.\n\n"
         "2. Получать тревогу от ребенка\n"
-        "Если ребенок нажмет кнопку помощи и отправит геолокацию, вам придет сообщение с координатами и кнопками для открытия места в картах.\n\n"
+        "Если ребенок нажмет «Опасность» или «Я потерялся» и отправит геолокацию, вам придет сообщение с координатами и кнопками для открытия места в картах.\n\n"
         "3. Открыть геолокацию в картах\n"
         "В сообщении будут кнопки: Google Map, Яндекс карты, Яндекс навигатор, 2Gis.\n\n"
         "4. Сообщить ребенку, что вы реагируете\n"
@@ -1381,12 +1380,10 @@ def child_help_text() -> str:
         "1. Подключиться к родителю\n"
         "Родитель дает тебе одноразовый код. Ты вводишь его в боте, и родитель подтверждает связь.\n\n"
         "2. Быстро попросить помощь\n"
-        "После подключения в главном меню будет кнопка «Нужна помощь».\n\n"
+        "После подключения в главном меню будут кнопки «Опасность» и «Я потерялся».\n\n"
         "3. Отправить тревогу родителям\n"
         "Можно выбрать «Опасность» или «Я потерялся». После этого бот попросит отправить геолокацию. Родители получат сообщение и смогут открыть место на карте.\n\n"
-        "4. Отправить тестовую тревогу\n"
-        "Кнопка «Тестовая тревога» нужна, чтобы вместе с родителями проверить, как все работает.\n\n"
-        "5. Ответить на запрос родителя\n"
+        "4. Ответить на запрос родителя\n"
         "Если родитель нажмет «Где мой ребенок?», тебе придет просьба отправить геолокацию. Ты можешь отправить ее или отказаться.\n\n"
         "Как подключиться к родителю:\n\n"
         "1. Попроси родителя открыть бот и нажать «Я родитель».\n"
@@ -1397,7 +1394,7 @@ def child_help_text() -> str:
         "6. Нажми «Ввести код родителя».\n"
         "7. Введи код, который дал родитель.\n"
         "8. Дождись, пока родитель подтвердит связь.\n\n"
-        "После подтверждения в боте появится кнопка «Нужна помощь». Если что-то случилось, нажми ее и отправь геолокацию."
+        "После подтверждения в боте появятся кнопки «Опасность» и «Я потерялся». Если что-то случилось, выбери подходящую кнопку и отправь геолокацию."
     )
 
 
@@ -1405,7 +1402,7 @@ def child_guide() -> str:
     return (
         "Рекомендации для ребенка\n\n"
         "1. Если потерялся, остановись и не уходи дальше.\n"
-        "2. Нажми кнопку помощи и отправь геолокацию.\n"
+        "2. Нажми «Я потерялся» или «Опасность» и отправь геолокацию.\n"
         "3. Обратись к полицейскому, сотруднику магазина, врачу или женщине с ребенком.\n"
         "4. Не уходи с незнакомым человеком, даже если он говорит, что знает родителей.\n"
         "5. Держи телефон заряженным и отвечай родителям."
@@ -1415,11 +1412,10 @@ def child_guide() -> str:
 def parent_guide() -> str:
     return (
         "Рекомендации для родителя\n\n"
-        "1. Один раз проверьте с ребенком тестовую тревогу.\n"
-        "2. Объясните, что кнопка помощи нажимается только при опасности или если ребенок потерялся.\n"
-        "3. После тревоги сначала подтвердите принятие, затем звоните ребенку.\n"
-        "4. Держите включенными уведомления MAX.\n"
-        "5. При реальной опасности параллельно обращайтесь в 112."
+        "1. Объясните ребенку, когда нажимать «Опасность» и когда нажимать «Я потерялся».\n"
+        "2. После тревоги сначала подтвердите принятие, затем звоните ребенку.\n"
+        "3. Держите включенными уведомления MAX.\n"
+        "4. При реальной опасности параллельно обращайтесь в 112."
     )
 
 
@@ -1650,7 +1646,7 @@ async def handle_text_state(chat_id: str, user_id: str, text: str, update: dict[
             ],
             columns=2,
         )
-        await send_message(chat_id, "Запрос отправлен родителю. После подтверждения появится кнопка помощи.")
+        await send_message(chat_id, "Запрос отправлен родителю. После подтверждения появятся кнопки «Опасность» и «Я потерялся».")
         return True
 
     if state == "child_await_location":
@@ -1936,7 +1932,7 @@ async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id:
             parent = get_user(user_id) or {}
             await send_message(chat_id, f"Связь с ребенком {child_name or 'Ребенок'} отключена.", [callback_button("Управление детьми", "parent:children"), callback_button("Главное меню", "main:menu")])
             if child_chat_id:
-                await send_message(child_chat_id, f"Родитель {parent.get('display_name') or 'Родитель'} отключил семейную связь.", [callback_button("Главное меню", "main:menu")])
+                await send_message(child_chat_id, f"Родитель {parent.get('display_name') or 'Родитель'} отключил(а) семейную связь.", [callback_button("Главное меню", "main:menu")])
             audit(user_id, chat_id, "family_link_removed", "family_link", link_id)
             return
     if payload == "child:menu":
@@ -1969,7 +1965,11 @@ async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id:
             child = get_user(child_user_id) or {}
             await send_message(chat_id, f"Связь с ребенком {child.get('display_name') or ''} подтверждена.", [callback_button("Главное меню", "main:menu")])
             if child.get("chat_id"):
-                await send_message(child["chat_id"], "Родитель подтвердил связь. Теперь кнопка помощи активна.", [callback_button("Нужна помощь", "child:sos")])
+                await send_message(
+                    child["chat_id"],
+                    "Родитель подтвердил(а) связь. Теперь доступны кнопки «Опасность» и «Я потерялся».",
+                    [callback_button("Опасность", "child:sos"), callback_button("Я потерялся", "child:lost")],
+                )
         else:
             execute("update sos_family.links set status = 'rejected', decided_at = now() where parent_user_id = %s and child_user_id = %s", (user_id, child_user_id))
             await send_message(chat_id, "Запрос отклонен.")
@@ -1998,7 +1998,7 @@ async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id:
                 child_text = f"Родитель {parent_name} едет."
             await send_message(row[1], child_text)
         if action == "close" and callback_id and row and row[4] is not None and row[5] is not None:
-            label = "Нужна помощь" if row[3] == "sos" else "Ребенок потерялся" if row[3] == "lost" else "Тестовая тревога"
+            label = "Опасность" if row[3] == "sos" else "Ребенок потерялся" if row[3] == "lost" else "Тестовая тревога"
             text = f"{label}\n\nРебенок: {row[2] or 'Ребенок'}\nГеолокация: {float(row[4]):.6f}, {float(row[5]):.6f}"
             with contextlib.suppress(Exception):
                 await answer_callback(callback_id, message_body(text, map_buttons(float(row[4]), float(row[5]))))
