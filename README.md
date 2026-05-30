@@ -8,6 +8,7 @@
 [![GHCR image](https://img.shields.io/badge/GHCR-sos--max--bot-0969da?logo=github)](https://github.com/yasg1988/sos-max-bot/pkgs/container/sos-max-bot)
 [![Docker Hub](https://img.shields.io/docker/v/lmserg/araltysh?label=docker%20hub&logo=docker)](https://hub.docker.com/r/lmserg/araltysh)
 [![Docker pulls](https://img.shields.io/docker/pulls/lmserg/araltysh?label=docker%20pulls&logo=docker)](https://hub.docker.com/r/lmserg/araltysh)
+[![License](https://img.shields.io/github/license/yasg1988/sos-max-bot?label=license)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-webhook-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 
@@ -118,6 +119,10 @@ MAX Bot -> HTTPS webhook -> Docker container -> PostgreSQL
 - Разделяйте базы и токены для разных регионов.
 - Перед публичным запуском очищайте тестовые семейные привязки.
 - Регулярно проверяйте логи webhook и ошибки доставки сообщений.
+
+## Лицензия
+
+Проект распространяется под лицензией [Apache License 2.0](LICENSE).
 
 ## Репозиторий
 
