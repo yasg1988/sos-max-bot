@@ -1,0 +1,28 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+    authors:
+      - dependabot
+  categories:
+    - title: Bot Changes
+      labels:
+        - bot
+        - feature
+        - enhancement
+    - title: Fixes
+      labels:
+        - fix
+        - bug
+    - title: Documentation
+      labels:
+        - documentation
+        - docs
+    - title: Infrastructure
+      labels:
+        - ci
+        - docker
+        - release
+    - title: Other Changes
+      labels:
+        - "*"
