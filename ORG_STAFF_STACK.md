@@ -1,7 +1,7 @@
 # Organization Bot Stack
 
 This file preserves the organization/staff feature scope that was removed from
-the active Оралтыш family bot UI. Use it as the starting checklist for a
+the active Аралтыш family bot UI. Use it as the starting checklist for a
 separate MAX bot.
 
 ## Scope
