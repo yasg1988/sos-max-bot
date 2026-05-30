@@ -5,3 +5,6 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+db_backups/
+presentation_slides_araltysh/
+school_a4_posters_araltysh/
