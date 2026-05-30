@@ -1,0 +1,37 @@
+{
+  "name": "araltysh",
+  "version": "0.1.0",
+  "description": "MAX messenger family SOS chatbot template for regional deployments.",
+  "private": false,
+  "type": "commonjs",
+  "files": [
+    "README.md",
+    "SERVICE_DESCRIPTION.txt",
+    "ORG_STAFF_STACK.md",
+    "app.py",
+    "assets/",
+    "Dockerfile",
+    "requirements.txt"
+  ],
+  "scripts": {
+    "docker:build": "docker build -t araltysh ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yasg1988/sos-max-bot.git"
+  },
+  "keywords": [
+    "max",
+    "chatbot",
+    "sos",
+    "family-safety",
+    "regional-template",
+    "fastapi"
+  ],
+  "author": "yasg1988",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/yasg1988/sos-max-bot/issues"
+  },
+  "homepage": "https://github.com/yasg1988/sos-max-bot#readme"
+}
