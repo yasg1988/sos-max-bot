@@ -1993,7 +1993,7 @@ async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id:
             parent_name = actor.get("display_name") or "Родитель"
             child_text = "Тревога закрыта родителем."
             if action == "accept":
-                child_text = f"{parent_name} принял тревогу."
+                child_text = f"{parent_name} принял(а) тревогу."
             elif action == "coming":
                 child_text = f"Родитель {parent_name} едет."
             await send_message(row[1], child_text)
