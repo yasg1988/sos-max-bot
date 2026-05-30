@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
 
 permissions:
@@ -35,6 +37,8 @@ jobs:
           tags: |
             type=raw,value=latest
             type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern=v{{version}}
 
       - name: Build and push
         uses: docker/build-push-action@v6
