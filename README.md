@@ -2,6 +2,13 @@
 
 ![Аралтыш - цифровой оберег семьи](assets/readme-cover.png)
 
+[![Docker image](https://github.com/yasg1988/sos-max-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/yasg1988/sos-max-bot/actions/workflows/docker-publish.yml)
+[![npm version](https://img.shields.io/npm/v/araltysh?color=cb0000&label=npm)](https://www.npmjs.com/package/araltysh)
+[![GitHub tag](https://img.shields.io/github/v/tag/yasg1988/sos-max-bot?label=github%20tag)](https://github.com/yasg1988/sos-max-bot/tags)
+[![GHCR image](https://img.shields.io/badge/GHCR-sos--max--bot-0969da?logo=github)](https://github.com/yasg1988/sos-max-bot/pkgs/container/sos-max-bot)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-webhook-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+
 **Аралтыш** - чат-бот в мессенджере MAX для экстренной связи ребенка с родителями.
 
 Ребенок нажимает одну из понятных кнопок: **Опасность** или **Я потерялся**. Родители получают тревожное сообщение и геолокацию ребенка. Сервис задуман как простой региональный шаблон: его можно развернуть в любом субъекте РФ, подключить своего MAX-бота, свою базу данных и использовать для семей, школ, кружков и общественных проектов.
