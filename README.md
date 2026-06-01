@@ -6,7 +6,7 @@
 [![npm version](https://img.shields.io/npm/v/araltysh?color=2ea44f&label=npm)](https://www.npmjs.com/package/araltysh)
 [![GitHub tag](https://img.shields.io/github/v/tag/yasg1988/sos-max-bot?label=github%20tag)](https://github.com/yasg1988/sos-max-bot/tags)
 [![GHCR image](https://img.shields.io/badge/GHCR-sos--max--bot-0969da?logo=github)](https://github.com/yasg1988/sos-max-bot/pkgs/container/sos-max-bot)
-[![Docker Hub](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhub.docker.com%2Fv2%2Frepositories%2Flmserg%2Faraltysh%2Ftags%2F0.1.6&query=name&label=docker%20hub&logo=docker&color=2496ed)](https://hub.docker.com/r/lmserg/araltysh)
+[![Docker Hub](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhub.docker.com%2Fv2%2Frepositories%2Flmserg%2Faraltysh%2Ftags%2F0.1.7&query=name&label=docker%20hub&logo=docker&color=2496ed)](https://hub.docker.com/r/lmserg/araltysh)
 [![Docker pulls](https://img.shields.io/docker/pulls/lmserg/araltysh?label=docker%20pulls&logo=docker)](https://hub.docker.com/r/lmserg/araltysh)
 [![License](https://img.shields.io/github/license/yasg1988/sos-max-bot?label=license)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
