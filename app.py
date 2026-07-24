@@ -25,7 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sos.bot")
 
-MAX_API_BASE = os.getenv("MAX_API_BASE", "https://platform-api.max.ru").rstrip("/")
+MAX_API_BASE = os.getenv("MAX_API_BASE", "https://platform-api2.max.ru").rstrip("/")
 MAX_BOT_TOKEN = os.getenv("MAX_BOT_TOKEN", "").strip()
 MAX_WEBHOOK_URL = os.getenv("MAX_WEBHOOK_URL", "").strip()
 MAX_REGISTER_WEBHOOK = os.getenv("MAX_REGISTER_WEBHOOK", "true").lower() in {"1", "true", "yes", "on"}

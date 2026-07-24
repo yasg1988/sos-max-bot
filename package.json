@@ -1,6 +1,6 @@
 {
   "name": "araltysh",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "MAX messenger family SOS chatbot template for regional deployments.",
   "private": false,
   "type": "commonjs",
@@ -10,6 +10,7 @@
     "ORG_STAFF_STACK.md",
     "app.py",
     "assets/",
+    "certs/",
     "Dockerfile",
     "requirements.txt"
   ],
