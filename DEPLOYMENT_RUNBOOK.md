@@ -1,204 +1,101 @@
-> Документ описывает прежнюю установку Dokploy. Для рабочей версии на Jino см. AGENTS.md и ops/systemd.
+# Развёртывание «Аралтыша» на Jino
 
-# Araltysh Deployment Runbook
+Рабочая ветка — [production-jino](https://github.com/yasg1988/sos-max-bot/tree/production-jino) в репозитории `yasg1988/sos-max-bot`. После проверки отправьте коммит в эту ветку. Файлы на VPS обновляются отдельным шагом. Публикация релизов из `main` выполняется отдельно.
 
-This file exists to prevent mixing Araltysh with the unrelated school project.
+## Рабочая схема
 
-## Do Not Confuse Projects
+| Компонент | Конфигурация |
+| --- | --- |
+| VPS Jino | SSH на `195.161.68.148` с выданным ключом и проверкой ключа хоста |
+| Публичный адрес | `https://araltysh.yasg.ru`, вебхук MAX — `https://araltysh.yasg.ru/webhook/max` |
+| HTTP на VPS | Caddy, `/etc/caddy/Caddyfile`. Для приложения проксирует запросы на `127.0.0.1:8011`. Публичный HTTPS проверяется с внешней машины |
+| Приложение | `araltysh.service` запускает Uvicorn (`app:app`) от пользователя `araltysh` из `/opt/araltysh` через `venv` |
+| PostgreSQL | Кластер `18/main`, база `araltysh`, `127.0.0.1:5432` |
+| Статистика | `araltysh-stats.timer` запускает `stats_report.py` ежедневно в 06:00 МСК |
+| Резервное копирование | `araltysh-backup.timer` запускает `/usr/local/sbin/araltysh-backup` ежедневно в 00:15 UTC (03:15 МСК) |
 
-Araltysh:
+Приложение и статистика загружают окружение из `/etc/araltysh.env` (`root:root`, права `0600`). Подключение к PostgreSQL задаётся переменными `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` и `DB_SSLMODE`. Для MAX используются `MAX_BOT_TOKEN`, `MAX_WEBHOOK_URL`, `MAX_WEBHOOK_SECRET` и `MAX_REGISTER_WEBHOOK`. Получатель статистики задаётся в `ARALTYSH_STATS_CHAT_ID`. Для доверенных сертификатов используются `SSL_CERT_FILE` и `REQUESTS_CA_BUNDLE`.
 
-- Local folder: `D:\Тревожная кнопка\sos-max-bot`
-- GitHub: `yasg1988/sos-max-bot`
-- GitVerse mirror: `https://gitverse.ru/yasg1988/araltysh`
-- Domain: `https://sos.yasg.ru`
-- VPS: `185.23.34.142`
-- SSH key: `%USERPROFILE%\.ssh\claude_dokploy_key`
-- Docker service: `sos-max-bot-lwl4ry`
+Храните вне Git файл окружения, SSH-ключи, рабочую конфигурацию Caddy, адресатов рассылок, журналы обращений и дампы. В репозитории хранятся [описания служб и таймеров](ops/systemd) и [скрипт резервного копирования](ops/sbin/araltysh-backup).
 
-School project:
+## Обновление на VPS
 
-- Local folder: `D:\medv_raion\school_4`
-- Separate project, separate deploy target.
-- Do not touch it while working on Araltysh.
+1. Перед коммитом проверьте рабочее дерево и синтаксис Python.
 
-## Secrets Policy
+   ~~~bash
+   git status --short --branch
+   git diff --check
+   python -m py_compile app.py stats_report.py
+   ~~~
 
-Do not put secrets in git.
+2. После push подготовьте архив конкретного проверенного коммита. Сохраните хеш предыдущей рабочей версии или копию текущих файлов вне Git. Перед изменением схемы БД подготовьте отдельный дамп.
 
-Secrets and credentials are expected to live outside the repository:
+   ~~~bash
+   git fetch origin production-jino
+   revision='<хеш проверенного коммита>'
+   git merge-base --is-ancestor "$revision" origin/production-jino || exit 1
+   git show --stat --oneline "$revision"
+   git archive --format=tar -o "araltysh-$revision.tar" "$revision" \
+     app.py stats_report.py requirements.txt assets combined-ca.pem certs ops
+   scp "araltysh-$revision.tar" root@195.161.68.148:/root/
+   ~~~
 
-- MAX bot token and database settings: Dokploy/service environment variables.
-- Docker Hub credentials: GitHub repository secrets.
-- GitVerse mirror token: GitHub repository secret `GITVERSE_TOKEN`.
-- npm token: user-provided token or local npm auth, used only through temporary config.
-- SSH deploy key: `%USERPROFILE%\.ssh\claude_dokploy_key`.
+3. На VPS от `root` подставьте проверенный хеш. Проверьте синтаксис файлов в распакованном архиве. Если изменились зависимости, установите их в `/opt/araltysh/venv` перед копированием файлов.
 
-Before every commit or release, run:
+   ~~~bash
+   set -e
+   revision='<хеш проверенного коммита>'
+   staging=$(mktemp -d)
+   tar -xf "/root/araltysh-$revision.tar" -C "$staging"
+   /opt/araltysh/venv/bin/python -m py_compile "$staging/app.py" "$staging/stats_report.py"
+   if ! cmp -s "$staging/requirements.txt" /opt/araltysh/requirements.txt; then
+     /opt/araltysh/venv/bin/python -m pip install -r "$staging/requirements.txt"
+   fi
+   install -m 0644 "$staging/"{app.py,stats_report.py,requirements.txt,combined-ca.pem} /opt/araltysh/
+   cp -a "$staging/"{assets,certs} /opt/araltysh/
+   ~~~
 
-```powershell
-rg -n "dckr_pat|npm_[A-Za-z0-9]|_authToken|NPM_TOKEN|NODE_AUTH_TOKEN|MAX_BOT_TOKEN=.*|BOT_TOKEN=.*" -S .
-```
+   Если изменились unit-файлы, установите их из `$staging/ops/systemd` с правами `0644` в `/etc/systemd/system/`, затем выполните `systemctl daemon-reload`. При изменении расписания перезапустите соответствующий таймер. Если изменился скрипт резервного копирования, установите его из `$staging/ops/sbin` с правами `0700` в `/usr/local/sbin/araltysh-backup`. После установки файлов выполните `systemctl restart araltysh.service`.
 
-Expected result: no raw secret values. Mentions of variable names such as `MAX_BOT_TOKEN` in docs/code are acceptable.
+4. Выполните проверки ниже и запишите хеш развёрнутой версии. При сбое верните файлы предыдущей рабочей версии, при необходимости восстановите её зависимости и перезапустите службу. Приложение выполняет миграции при старте. Перед откатом кода проверьте совместимость текущей схемы с предыдущей версией.
 
-## Local Verification
+   После проверки удалите временный каталог и загруженный архив с VPS.
 
-```powershell
-cd "D:\Тревожная кнопка\sos-max-bot"
-python -m py_compile app.py
-git status --short
-```
+## Проверка после обновления
 
-## Release Version
+На VPS проверьте службы, внутренний HTTP, PostgreSQL и расписание.
 
-Update `package.json`:
+~~~bash
+systemctl is-active araltysh.service caddy.service postgresql@18-main.service
+curl -fsS -o /dev/null -w 'Uvicorn HTTP %{http_code}\n' http://127.0.0.1:8011/health
+curl -fsS -o /dev/null -w 'Caddy HTTP %{http_code}\n' -H 'Host: araltysh.yasg.ru' http://127.0.0.1/health
+pg_lsclusters
+runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -d araltysh -c 'SELECT 1;'
+TZ=Europe/Moscow systemctl list-timers --all araltysh-stats.timer araltysh-backup.timer
+systemctl show araltysh-stats.service araltysh-backup.service -p Id -p Result -p ExecMainStatus
+~~~
 
-```json
-"version": "X.Y.Z"
-```
+Для проверки с учётными данными приложения запустите отчёт от пользователя службы с её файлом окружения. Режим `--dry-run` читает БД и печатает сводку в терминал.
 
-If the README Docker Hub badge contains a version-specific URL, update it to `X.Y.Z` too.
+~~~bash
+systemd-run --wait --pipe --collect \
+  -p User=araltysh -p Group=araltysh \
+  -p WorkingDirectory=/opt/araltysh -p EnvironmentFile=/etc/araltysh.env \
+  /opt/araltysh/venv/bin/python /opt/araltysh/stats_report.py --dry-run
+~~~
 
-Commit and tag:
+С внешней машины откройте [публичный `/health`](https://araltysh.yasg.ru/health). Ожидаются HTTP `200`, `status=ok`, `service=sos-max-bot` и `webhook_url=https://araltysh.yasg.ru/webhook/max`. Доступность БД проверяйте отдельной командой. Для проверки подписки MAX убедитесь, что URL вебхука присутствует в ответе `GET /subscriptions` API MAX.
 
-```powershell
-git add app.py README.md package.json
-git commit -m "fix(bot): short change description"
-git tag vX.Y.Z
-git push origin main
-git push origin vX.Y.Z
-```
+## Журналы за последние 24 часа
 
-Adjust `git add` files to match the actual change.
+~~~bash
+TZ=Europe/Moscow journalctl --since '24 hours ago' --no-pager \
+  -u araltysh.service -u araltysh-stats.service -u araltysh-backup.service \
+  -u postgresql@18-main.service -u caddy.service
+~~~
 
-## npm Publish
+При проверке вебхука ищите сообщения `Failed to process MAX update`. Обработчик журналирует исключение и может вернуть HTTP `200`. Ошибки SQL ищите в `/var/log/postgresql/postgresql-18-main.log` и ротированных файлах по полю базы `araltysh`. Кластер обслуживает несколько проектов. Перед передачей выдержек из журналов уберите данные обращений и идентификаторы пользователей.
 
-Package name: `araltysh`.
+## Резервные копии
 
-Use a temporary npm config. Never write `.npmrc` to the repo.
-
-```powershell
-$token = $env:NPM_TOKEN
-$tmp = Join-Path $env:TEMP ('npmrc-araltysh-' + [guid]::NewGuid().ToString())
-"//registry.npmjs.org/:_authToken=$token" | Set-Content -LiteralPath $tmp -Encoding ASCII
-try {
-  npm publish --access public --userconfig $tmp
-} finally {
-  Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
-}
-```
-
-Verify:
-
-```powershell
-npm view araltysh version gitHead license --json
-```
-
-## Docker Images
-
-GitHub Actions workflow `.github/workflows/docker-publish.yml` publishes images to:
-
-- `ghcr.io/yasg1988/sos-max-bot:X.Y.Z`
-- `ghcr.io/yasg1988/sos-max-bot:vX.Y.Z`
-- `docker.io/lmserg/araltysh:X.Y.Z`
-- `docker.io/lmserg/araltysh:vX.Y.Z`
-- `latest`
-
-Check workflow:
-
-```powershell
-gh run list --workflow docker-publish.yml --limit 5
-gh run watch <run-id> --exit-status
-```
-
-Check Docker Hub tag:
-
-```powershell
-Invoke-RestMethod -Uri "https://hub.docker.com/v2/repositories/lmserg/araltysh/tags/X.Y.Z" | ConvertTo-Json -Depth 3
-```
-
-## GitVerse Mirror
-
-GitVerse repository:
-
-```text
-https://gitverse.ru/yasg1988/araltysh
-```
-
-The GitHub workflow `.github/workflows/gitverse-mirror.yml` mirrors branches and tags to GitVerse on push.
-
-Required GitHub secret:
-
-```text
-GITVERSE_TOKEN
-```
-
-If `GITVERSE_TOKEN` is absent, the workflow skips mirroring without failing.
-
-Verify mirror state:
-
-```powershell
-git ls-remote https://gitverse.ru/yasg1988/araltysh.git HEAD refs/heads/main refs/tags/vX.Y.Z
-```
-
-## Production Deploy
-
-Deploy only to Araltysh VPS `185.23.34.142`.
-
-```powershell
-ssh -i $env:USERPROFILE\.ssh\claude_dokploy_key -o StrictHostKeyChecking=no root@185.23.34.142 "docker pull ghcr.io/yasg1988/sos-max-bot:X.Y.Z && docker service update --image ghcr.io/yasg1988/sos-max-bot:X.Y.Z sos-max-bot-lwl4ry"
-```
-
-Verify the service:
-
-```powershell
-ssh -i $env:USERPROFILE\.ssh\claude_dokploy_key -o StrictHostKeyChecking=no root@185.23.34.142 "docker service ls --format '{{.Name}} {{.Image}} {{.Replicas}}' | grep sos-max-bot-lwl4ry && docker service ps sos-max-bot-lwl4ry --no-trunc --format '{{.CurrentState}} {{.Image}} {{.Error}}' | head -5"
-```
-
-Verify the app:
-
-```powershell
-(Invoke-WebRequest -UseBasicParsing https://sos.yasg.ru/health -TimeoutSec 20).Content
-```
-
-Expected health response contains:
-
-- `"status":"ok"`
-- `"service":"sos-max-bot"`
-- `"webhook_url":"https://sos.yasg.ru/webhook/max"`
-
-## GitHub Release
-
-```powershell
-$notes = @'
-## Что изменилось
-
-- Краткое описание изменения.
-
-## Публикация
-
-- npm: araltysh@X.Y.Z
-- Docker Hub: lmserg/araltysh:X.Y.Z
-- GHCR: ghcr.io/yasg1988/sos-max-bot:X.Y.Z
-'@
-$tmp = Join-Path $env:TEMP ('release-vX.Y.Z-' + [guid]::NewGuid().ToString() + '.md')
-Set-Content -LiteralPath $tmp -Value $notes -Encoding UTF8
-try {
-  gh release create vX.Y.Z --title "Аралтыш vX.Y.Z" --notes-file $tmp --latest
-} finally {
-  Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
-}
-```
-
-Verify:
-
-```powershell
-gh release view vX.Y.Z --json tagName,name,isDraft,isPrerelease,url,publishedAt,targetCommitish
-```
-
-## Database Caution
-
-Do not clear production tables or family links without explicit confirmation from the user.
-
-If database cleanup is requested, make a backup first and keep it in `db_backups/` or another explicit backup path.
+Штатный скрипт хранит два последних архива `db-*.dump` в `/var/backups/araltysh`. Команда `pg_restore --list /var/backups/araltysh/<имя-архива>` проверяет, что оглавление читается. Перед работами с данными сохраните отдельный дамп вне каталога автоматической ротации. Очистку рабочих таблиц или семейных связей выполняйте только после явного подтверждения.
