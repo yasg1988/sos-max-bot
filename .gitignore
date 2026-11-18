@@ -9,3 +9,16 @@ db_backups/
 presentation_slides_araltysh/
 school_a4_posters_araltysh/
 registry_ru/
+
+
+/.private/
+*.dpapi
+.env
+.env.*
+!.env.example
+*.key
+*.pfx
+*.p12
+__pycache__/
+node_modules/
+/recovery-backups/

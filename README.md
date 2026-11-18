@@ -1,5 +1,8 @@
 # Аралтыш
 
+Рабочая серверная версия Jino находится в ветке `production-jino`. Точки входа и действующие службы перечислены в AGENTS.md.
+
+
 ![Аралтыш - цифровой оберег семьи](assets/readme-cover.png)
 
 [![Docker image](https://github.com/yasg1988/sos-max-bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/yasg1988/sos-max-bot/actions/workflows/docker-publish.yml)

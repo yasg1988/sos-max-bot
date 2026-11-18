@@ -1,0 +1,7 @@
+[Unit]
+Description=Daily Araltysh database backup
+[Timer]
+OnCalendar=*-*-* 00:15:00
+Persistent=true
+[Install]
+WantedBy=timers.target

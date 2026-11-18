@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily Araltysh statistics at 06:00 Moscow time
+[Timer]
+OnCalendar=*-*-* 06:00:00 Europe/Moscow
+AccuracySec=1s
+Persistent=false
+[Install]
+WantedBy=timers.target

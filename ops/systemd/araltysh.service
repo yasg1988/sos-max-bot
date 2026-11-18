@@ -1,0 +1,20 @@
+[Unit]
+Description=Araltysh MAX bot
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+[Service]
+Type=simple
+User=araltysh
+Group=araltysh
+WorkingDirectory=/opt/araltysh
+EnvironmentFile=/etc/araltysh.env
+ExecStart=/opt/araltysh/venv/bin/uvicorn app:app --host 127.0.0.1 --port 8011
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+[Install]
+WantedBy=multi-user.target

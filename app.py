@@ -28,6 +28,7 @@ logger = logging.getLogger("sos.bot")
 MAX_API_BASE = os.getenv("MAX_API_BASE", "https://platform-api2.max.ru").rstrip("/")
 MAX_BOT_TOKEN = os.getenv("MAX_BOT_TOKEN", "").strip()
 MAX_WEBHOOK_URL = os.getenv("MAX_WEBHOOK_URL", "").strip()
+MAX_WEBHOOK_SECRET = os.getenv("MAX_WEBHOOK_SECRET", "").strip()
 MAX_REGISTER_WEBHOOK = os.getenv("MAX_REGISTER_WEBHOOK", "true").lower() in {"1", "true", "yes", "on"}
 ADMIN_USER_IDS = {
     item.strip()
@@ -1836,7 +1837,9 @@ async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id:
             'Чат-бот разработан по инициативе Молодежного парламента Республики Марий Эл, при поддержке Государственного Собрания Республики Марий Эл, Партийных проектов:\n'
             '- "Цифровая Россия",\n'
             '- "Крепкая семья",\n'
-            '- "Женское движение"',
+            '- "Женское движение"\n\n'
+            '«Аралтыш» включён в Единый реестр российских программ для ЭВМ и баз данных Минцифры России. '
+            'Реестровая запись № 34760 от 18 августа 2026 года.',
             [callback_button("Главное меню", "main:menu")],
         )
         return
@@ -2194,7 +2197,15 @@ async def handle_callback(chat_id: str, user_id: str, payload: str, callback_id:
 
 async def process_update(update: dict[str, Any]) -> None:
     logger.info("Processing update=%s", safe_json_dump(update))
+    if update.get("update_type") in {"bot_added", "bot_admin_permissions_changed"}:
+        return
+    message = update.get("message") or {}
+    recipient = message.get("recipient") or {}
+    if recipient.get("chat_type") in {"channel", "chat"}:
+        return
     chat_id = extract_chat_id(update)
+    profile_id = extract_user_profile(update).get("user_id")
+    missing_user = profile_id is not None and get_user(str(profile_id)) is None
     user_id = upsert_user(update, chat_id)
     if not chat_id or not user_id:
         logger.info("Ignoring update without chat_id/user_id")
@@ -2204,6 +2215,20 @@ async def process_update(update: dict[str, Any]) -> None:
     update_type = update.get("update_type")
     if update_type == "message_callback":
         payload = extract_callback_payload(update)
+        if missing_user:
+            callback_id = extract_callback_id(update)
+            if callback_id:
+                await answer_callback(callback_id)
+            await send_message(
+                chat_id,
+                "Уважаемый пользователь! Из-за аварии у хостинг-провайдера чат-бот «Аралтыш» был перезапущен, "
+                "и часть данных о прежних связях восстановить пока не удалось. "
+                "Пожалуйста, заново установите связь между родителем и ребёнком через главное меню.\n\n"
+                "Все данные пользователей чат-бота в безопасности и скомпрометированы не были.\n\n"
+                "Если возникла непосредственная опасность, обратитесь в экстренную службу по номеру 112.",
+                [callback_button("Главное меню", "main:menu")],
+            )
+            return
         await handle_callback(chat_id, user_id, payload, extract_callback_id(update))
         return
     text = extract_text(update)
@@ -2249,7 +2274,9 @@ async def ensure_webhook() -> None:
     if not MAX_WEBHOOK_URL or not MAX_REGISTER_WEBHOOK:
         logger.info("Skipping webhook registration")
         return
-    body = {"url": MAX_WEBHOOK_URL, "update_types": ["message_created", "message_callback", "bot_started"]}
+    body = {"url": MAX_WEBHOOK_URL, "update_types": ["message_created", "message_callback", "bot_started", "bot_added", "bot_admin_permissions_changed"]}
+    if MAX_WEBHOOK_SECRET:
+        body["secret"] = MAX_WEBHOOK_SECRET
     try:
         await max_request("POST", "/subscriptions", json=body)
         logger.info("MAX webhook registered: %s", MAX_WEBHOOK_URL)
@@ -2288,6 +2315,10 @@ async def health() -> dict[str, Any]:
 
 @app.post("/webhook/max")
 async def webhook_max(request: Request) -> Response:
+    if MAX_WEBHOOK_SECRET and not secrets.compare_digest(
+        request.headers.get("X-Max-Bot-Api-Secret", ""), MAX_WEBHOOK_SECRET
+    ):
+        return Response(status_code=403)
     payload = await request.json()
     try:
         await process_update(payload)

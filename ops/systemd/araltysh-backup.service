@@ -1,0 +1,6 @@
+[Unit]
+Description=Araltysh database backup
+After=postgresql.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/araltysh-backup

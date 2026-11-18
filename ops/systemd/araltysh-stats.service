@@ -1,0 +1,16 @@
+[Unit]
+Description=Araltysh daily statistics to MAX channel
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+[Service]
+Type=oneshot
+User=araltysh
+Group=araltysh
+WorkingDirectory=/opt/araltysh
+EnvironmentFile=/etc/araltysh.env
+ExecStart=/opt/araltysh/venv/bin/python /opt/araltysh/stats_report.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

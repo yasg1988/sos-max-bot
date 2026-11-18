@@ -1,3 +1,5 @@
+> Документ описывает прежнюю установку Dokploy. Для рабочей версии на Jino см. AGENTS.md и ops/systemd.
+
 # Araltysh Deployment Runbook
 
 This file exists to prevent mixing Araltysh with the unrelated school project.
