@@ -2216,9 +2216,9 @@ async def process_update(update: dict[str, Any]) -> None:
     if update_type == "message_callback":
         payload = extract_callback_payload(update)
         if missing_user:
-            callback_id = extract_callback_id(update)
-            if callback_id:
-                await answer_callback(callback_id)
+            if payload == "main:menu":
+                await show_main(chat_id, user_id)
+                return
             await send_message(
                 chat_id,
                 "Уважаемый пользователь! Из-за аварии у хостинг-провайдера чат-бот «Аралтыш» был перезапущен, "
